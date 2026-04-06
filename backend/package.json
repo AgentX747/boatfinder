@@ -2,7 +2,7 @@
   "type": "module",
   "scripts": {
     "dev": "nodemon --watch src --ext ts --exec npx tsx src/server.ts",
-    "build": "tsc",
+     "build": "tsc && cp src/ca.pem dist/config/ca.pem",
     "start": "node dist/server.js"
   },
   "dependencies": {
