@@ -1,20 +1,43 @@
-import dotenv from "dotenv";
-dotenv.config();
-import mysql from "mysql2/promise";
-import fs from "fs"; // ES module import
+import mysql from 'mysql2/promise';
+import fs from 'fs';
+import path from 'path';
+import { fileURLToPath } from 'url';
 
-export const connection = mysql.createPool({
+// Get __dirname equivalent in ES modules
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+// Path to ca.pem - adjust based on where it is relative to this file
+// If ca.pem is in root and this file is in backend/config/, go up 2 levels
+const caPemPath = path.join(__dirname, '../../ca.pem');
+
+const pool = mysql.createPool({
   host: process.env.DB_HOST,
-  port: Number(process.env.DB_PORT),
+  port: parseInt(process.env.DB_PORT || '20091'),
   user: process.env.DB_USER,
   password: process.env.DB_PASSWORD,
   database: process.env.DB_NAME,
-
   ssl: {
-    ca: fs.readFileSync('./ca.pem'), // 👈 path to your ca.pem('./ca.pem'),
+    ca: fs.readFileSync(caPemPath),
+    rejectUnauthorized: false  // Set to true in production for better security
   },
-
   waitForConnections: true,
   connectionLimit: 10,
+  maxIdle: 10,
+  idleTimeout: 60000,
   queueLimit: 0,
+  enableKeepAlive: true,
+  keepAliveInitialDelay: 0
 });
+
+// Test connection
+pool.getConnection()
+  .then(connection => {
+    console.log('✅ Database connected successfully');
+    connection.release();
+  })
+  .catch(err => {
+    console.error('❌ Database connection failed:', err.message);
+  });
+
+export default pool;
