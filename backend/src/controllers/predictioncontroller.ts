@@ -42,7 +42,8 @@ export async function getNationalForecast(req: Request, res: Response) {
 // ── PMO ───────────────────────────────────────────────────────────────────
 
 export async function getPMOForecast(req: Request, res: Response) {
-  const pmo = req.params.pmo;
+  const pmo = String(req.params.pmo);
+  
   const n_months = parseInt(req.query.months as string) || 12;
   try {
     const data = await predictionService.getPMOForecast(pmo, n_months);

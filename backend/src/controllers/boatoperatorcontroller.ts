@@ -3,9 +3,6 @@ import * as boatService from "../services/boatoperatorservice.js";
 import * as onlineService from "../services/onlinepaymentservice.js";
 import { AuthPayload } from "../middleware/authmiddleware.js";
 
-
-
-
 export async function addboatController(req: Request, res: Response) {
   try {
     const result = await boatService.addBoat(req.user as AuthPayload, req.body, req.headers["user-agent"] ?? null);
@@ -26,7 +23,6 @@ export async function getBoatCardInfoController(req: Request, res: Response) {
 }
 
 export async function getOperatorPendingBookingsController(req: Request, res: Response) {
- 
   try {
     const bookings = await boatService.getOperatorPendingBookings(req.user as AuthPayload);
     res.json(bookings);
@@ -34,6 +30,7 @@ export async function getOperatorPendingBookingsController(req: Request, res: Re
     res.status(err.status || 500).json({ message: err.message });
   }
 }
+
 export async function getAcceptedBookingsController(req: Request, res: Response) {
   try {
     if (!req.user) {
@@ -54,14 +51,12 @@ export async function acceptPendingBookingsController(
   res: Response
 ) {
   try {
-    // Auth guard (usually middleware already does this, but safe)
     if (!req.user) {
       return res.status(401).json({ message: "Unauthorized" });
     }
 
-    const { bookingId } = req.params;
+    const bookingId = String(req.params.bookingId);
 
-    // Validate param
     if (!bookingId || isNaN(Number(bookingId))) {
       return res.status(400).json({ message: "Invalid booking ID" });
     }
@@ -71,7 +66,6 @@ export async function acceptPendingBookingsController(
       { bookingId }
     );
 
-    
     if (result.affectedRows === 0) {
       return res.status(404).json({
         message: "Booking not found or already processed",
@@ -88,26 +82,27 @@ export async function acceptPendingBookingsController(
     });
   }
 }
+
 export async function declinePendingBookingsController(
   req: Request,
   res: Response
 ) {
   try {
-    
     if (!req.user) {
       return res.status(401).json({ message: "Unauthorized" });
     }
 
-   const { bookingId } = req.params;
+    const bookingId = String(req.params.bookingId);
 
-    // Validate param
     if (!bookingId || isNaN(Number(bookingId))) {
       return res.status(400).json({ message: "Invalid booking ID" });
     }
 
-    const result: any = await boatService.declinePendingBookings( req.user as AuthPayload, { bookingId });
+    const result: any = await boatService.declinePendingBookings(
+      req.user as AuthPayload, 
+      { bookingId }
+    );
 
-    
     if (result.affectedRows === 0) {
       return res.status(404).json({
         message: "Booking not found or already processed",
@@ -115,26 +110,23 @@ export async function declinePendingBookingsController(
     }
 
     return res.status(200).json({
-      message: "Booking accepted successfully",
+      message: "Booking declined successfully",
     });
   } catch (err: any) {
-    console.error("Error accepting pending booking:", err);
+    console.error("Error declining pending booking:", err);
     return res.status(err.status || 500).json({
       message: err.message || "Internal server error",
     });
   }
 }
 
-
-
-//editboat
 export async function getEditBoatDetailsController(req: Request, res: Response) {
   try {
     if (!req.user) {
       return res.status(401).json({ message: "Unauthorized" });
     }
 
-    const { boatID } = req.params; // ✅ matches :boatID in route
+    const boatID = String(req.params.boatID);
 
     if (!boatID) {
       return res.status(400).json({ message: "Boat ID is required" });
@@ -142,7 +134,7 @@ export async function getEditBoatDetailsController(req: Request, res: Response) 
 
     const boatDetails = await boatService.getEditBoatDetails(
       req.user as AuthPayload,
-      boatID // ✅
+      boatID
     );
 
     if (!boatDetails || boatDetails.length === 0) {
@@ -160,6 +152,7 @@ export async function getEditBoatDetailsController(req: Request, res: Response) 
     });
   }
 }
+
 export async function confirmEditBoatController(
   req: Request,
   res: Response
@@ -169,7 +162,7 @@ export async function confirmEditBoatController(
       return res.status(401).json({ message: "Unauthorized" });
     }
 
-    const { boatID } = req.params;
+    const boatID = String(req.params.boatID);
 
     if (!boatID) {
       return res.status(400).json({ message: "Boat ID is required" });
@@ -192,17 +185,17 @@ export async function confirmEditBoatController(
   }
 }
 
-
-
 export async function getEditTicketBoatCardController(req: Request, res: Response) {
   try {
     if (!req.user) {
       return res.status(401).json({ message: "Unauthorized" });
     }
 
+    const boatID = String(req.params.boatID);
+
     const result = await boatService.editTicketCardDetails(
       req.user as AuthPayload,
-      req.params.boatID
+      boatID
     );
 
     return res.status(200).json(result);
@@ -224,7 +217,7 @@ export async function editTicketPricePageController(
       return res.status(401).json({ message: "Unauthorized" });
     }
 
-    const { boatID } = req.params;
+    const boatID = String(req.params.boatID);
 
     if (!boatID) {
       return res.status(400).json({ message: "Boat ID is required" });
@@ -259,14 +252,16 @@ export async function confirmTicketPriceController(
     if (!req.user) {
       return res.status(401).json({ message: "Unauthorized" });
     }
+
+    const boatID = String(req.params.boatID);
+
     const result = await boatService.confirmEditTicketPrice(
       req.user as AuthPayload,
-      req.params.boatID,
+      boatID,
       req.body
     );
     return res.status(200).json(result);
-  }
-    catch (error: any) {
+  } catch (error: any) {
     console.error("Error in updateTicketPriceController:", error);
 
     return res.status(error.status || 500).json({
@@ -280,14 +275,14 @@ export async function confirmDeleteBoatController(req: Request, res: Response) {
     if (!req.user) {
       return res.status(401).json({ message: "Unauthorized" });
     }
-    const { boatId } = req.params;
+
+    const boatId = String(req.params.boatId);
 
     const result = await boatService.confirmDeleteBoat(
- 
-  req.user as AuthPayload,
-   Number(boatId) 
-  
-);
+      req.user as AuthPayload,
+      Number(boatId)
+    );
+
     return res.status(200).json(result);
   } catch (error: any) {
     console.error("Error in confirmDeleteBoatController:", error);
@@ -299,14 +294,10 @@ export async function confirmDeleteBoatController(req: Request, res: Response) {
 }
 
 export async function boatOperatorCurrentDetailsController(req: Request, res: Response) {
-  const { boatoperatorId } = req.params;
-
   try {
-  
+    const boatoperatorId = String(req.params.boatoperatorId);
 
     const result = await boatService.boatOperatorCurrentDetails(Number(boatoperatorId));
-
-   
 
     if (!result || (Array.isArray(result) && result.length === 0)) {
       return res.status(404).json({ message: "Boat operator not found" });
@@ -319,6 +310,7 @@ export async function boatOperatorCurrentDetailsController(req: Request, res: Re
     res.status(500).json({ message: "Server error" });
   }
 }
+
 export async function confirmEditBoatOperatorController(req: Request, res: Response) {
   const { firstName, lastName, userName, email, password, confirmPassword,
           phone_number, address, gender, birthdate } = req.body;
@@ -337,9 +329,8 @@ export async function confirmEditBoatOperatorController(req: Request, res: Respo
     }
   }
 
-  // Get user_id from JWT and operator_id from params
   const { sub } = req.user as AuthPayload;
-  const { boatoperatorId } = req.params;
+  const boatoperatorId = String(req.params.boatoperatorId);
 
   try {
     const result = await boatService.confirmEditBoatOperator({
@@ -358,7 +349,6 @@ export async function confirmEditBoatOperatorController(req: Request, res: Respo
 
 export async function getOperatorBookingHistory(req: Request, res: Response) {
   try {
-
     if (!req.user) {
       return res.status(401).json({ message: "Unauthorized" });
     }
@@ -370,7 +360,6 @@ export async function getOperatorBookingHistory(req: Request, res: Response) {
     return res.json(operatorBookings);
 
   } catch (err: any) {
-
     console.error("Error fetching operator booking history:", err);
 
     return res.status(500).json({
@@ -381,7 +370,6 @@ export async function getOperatorBookingHistory(req: Request, res: Response) {
 
 export async function getOperatorRefundRequests(req: Request, res: Response) {
   try {
-
     if (!req.user) {
       return res.status(401).json({ message: "Unauthorized" });
     }
@@ -393,14 +381,12 @@ export async function getOperatorRefundRequests(req: Request, res: Response) {
     return res.json(operatorRefundRequests);
 
   } catch (err: any) {
-
     console.error("Error fetching operator refund requests:", err);
 
     return res.status(500).json({
       message: err.message || "Internal server error",
     });
   }
-  
 }
 
 export async function getManageUserRefundsDetailsController(req: Request, res: Response) {
@@ -408,9 +394,16 @@ export async function getManageUserRefundsDetailsController(req: Request, res: R
     if (!req.user) {
       return res.status(401).json({ message: "Unauthorized" });
     }
+
     const { sub } = req.user as AuthPayload;
     const userID = parseInt(sub);
-  const refundRequests = await boatService.getManageUserRefundsDetails(req.params.refundId, req.user as AuthPayload);
+    const refundId = String(req.params.refundId);
+
+    const refundRequests = await boatService.getManageUserRefundsDetails(
+      refundId, 
+      req.user as AuthPayload
+    );
+
     return res.json(refundRequests);
   } catch (err: any) {
     console.error("Error fetching refund requests:", err);
@@ -424,7 +417,7 @@ export async function confirmOperatorRefundReplyController(req: Request, res: Re
       return res.status(401).json({ message: "Unauthorized" });
     }
 
-    const { refundId } = req.params;
+    const refundId = String(req.params.refundId);
 
     if (!refundId || isNaN(Number(refundId))) {
       return res.status(400).json({ message: "Invalid refund ID" });
@@ -444,4 +437,3 @@ export async function confirmOperatorRefundReplyController(req: Request, res: Re
     });
   }
 }
-

@@ -19,7 +19,6 @@ export async function searchBoatsController(req: Request, res: Response) {
       return res.status(401).json({ message: "User not authenticated" });
     }
 
-    // FIXED: Changed from req.body to req.query
     const boats = await userService.searchrouteandtime(req.query);
 
     return res.json(boats);
@@ -41,21 +40,17 @@ export async function getAllBoatsController(req: Request, res: Response) {
 
 export async function bookBoatdetailsController(req: Request, res: Response) {
   try {
-   
-    const { boatID } = req.params;
+    const boatID = String(req.params.boatID);
     
     const boatDetails = await userService.bookBoatdetails(boatID);
 
-    
     if (!boatDetails) {
       return res.status(404).json({ message: 'Boat not found' });
     }
     
-    
     return res.json(boatDetails);
     
   } catch (err: any) {
-  
     return res.status(500).json({ message: err.message || 'Internal server error' });
   }
 }
@@ -63,17 +58,14 @@ export async function bookBoatdetailsController(req: Request, res: Response) {
 export async function physicalbookBoatController(req: Request, res: Response) {
   const {tripDate} = req.body
   try {
-   
     if(!tripDate){
       return res.status(400).json({ message: 'trip date is required' });
     }
-    
 
     const {sub , role }  = req.user as AuthPayload;
     const boatId = parseInt(sub);
 
     const result = await userService.physicalbookTransaction(boatId , req.body , role);
-    
 
     return res.json({
       message: 'Booking created successfully',
@@ -102,6 +94,7 @@ export async function getPendingBookingsController(req: Request, res: Response) 
     return res.status(500).json({ message: err.message || 'Internal server error' });
   }
 }
+
 export async function getAcceptedBookingsController(req: Request, res: Response) {
   try {
     if (!req.user) {
@@ -120,21 +113,22 @@ export async function getAcceptedBookingsController(req: Request, res: Response)
   }
 }
 
-
-
 export async function getBookingDetailsController(req: Request, res: Response) {
   try {
     if (!req.user) {
       return res.status(401).json({ message: 'Unauthorized' });
     }
+
     const {sub }  = req.user as AuthPayload;
     const userID = parseInt(sub);
-    const { bookingId } = req.params;
+    const bookingId = String(req.params.bookingId);
+
     const bookingDetails = await userService.getCurrentBookingDetails(userID, bookingId);
 
     if (!bookingDetails) {
       return res.status(404).json({ message: 'Booking not found' });
     }
+
     return res.json(bookingDetails);
   } catch (err: any) {
     console.error('Error fetching booking details:', err);
@@ -150,7 +144,7 @@ export async function cancelPendingBookingController(req: Request, res: Response
 
     const { sub } = req.user as AuthPayload;
     const userID = Number(sub);
-    const { bookingId } = req.params;
+    const bookingId = String(req.params.bookingId);
 
     const result = await userService.cancelBooking(userID, Number(bookingId));
 
@@ -177,14 +171,11 @@ export async function getBookingHistoryController(req: Request, res: Response) {
     console.error('Error fetching booking history:', error);
     return res.status(500).json({ message: 'Internal server error' });
   }
-
 }
-
 
 export async function getCurrentUserDetailsCotroller(req: Request, res: Response) {
   try {
     const { sub } = req.user as AuthPayload;
-
     const userID = parseInt(sub);
 
     const user = await userService.userCurrentDetails(userID);
@@ -195,7 +186,7 @@ export async function getCurrentUserDetailsCotroller(req: Request, res: Response
     return res.status(500).json({ message: "Failed to fetch user details" });
   }
 }
-// ✅ FIXED
+
 export async function confirmEditUserController(req: Request, res: Response) {
   const { firstName, lastName, userName, email, password, confirmPassword,
           phone_number, address, gender, birthdate } = req.body
@@ -204,7 +195,6 @@ export async function confirmEditUserController(req: Request, res: Response) {
     return res.status(400).json({ message: "All fields are required" });
   }
 
-  // Only validate password rules when the user is actually trying to change it
   if (password || confirmPassword) {
     if (!/^(?=.*[A-Z])(?=.*\d).{8,}$/.test(password)) {
       return res.status(400).json({ message: "Password must be 8+ chars, 1 uppercase & 1 number" });
@@ -250,12 +240,15 @@ export async function submitTicketController(req: Request, res: Response) {
     return res.status(500).json({ message: "Failed to submit ticket" });
   }
 }
+
 export async function getOnlineTripDetailsController(req: Request, res: Response) {
   try {
     if (!req.user) {
       return res.status(401).json({ message: "Unauthorized" });
     }
-    const tripDetails = await onlineService.getTripDetails(Number(req.params.boatId));
+
+    const boatId = String(req.params.boatId);
+    const tripDetails = await onlineService.getTripDetails(Number(boatId));
     
     if (!tripDetails || tripDetails.length === 0) {
       return res.status(404).json({ message: "Trip not found" });
@@ -273,17 +266,14 @@ export async function getOnlineTripDetailsController(req: Request, res: Response
 export async function onlinebookBoatController(req: Request, res: Response) {
   const {tripDate} = req.body
   try {
-   
     if(!tripDate){
       return res.status(400).json({ message: 'trip date is required' });
     }
-    
 
     const {sub , role }  = req.user as AuthPayload;
     const boatId = parseInt(sub);
 
     const result = await onlineService.confirmOnlinePayment(boatId , req.body , role);
-    
 
     return res.json({
       message: 'Booking created successfully',
@@ -295,14 +285,11 @@ export async function onlinebookBoatController(req: Request, res: Response) {
   }
 }
 
-
 export async function refundTicketController(req: Request, res: Response) {
   try {
     const user = req.user as AuthPayload;
 
     const { operatorId, message, ticketCode, image } = req.body;
-    // ✅ image is already set as a URL string in req.body by uploadRefundImage middleware
-    // so we just read it from req.body, not req.file
 
     if (!ticketCode || !operatorId || !message) {
       return res.status(400).json({
@@ -330,34 +317,29 @@ export async function refundTicketController(req: Request, res: Response) {
     });
   }
 }
+
 export async function getRefundTicketCardsController(req: Request, res: Response) {
   try {
-  
-
     if (!req.user) {
       res.status(401).json({ message: "Unauthorized" });
       return;
     }
 
     const { sub } = req.user as AuthPayload;
-
-   
-
     const tickets = await userService.getRefundTickets(Number(sub));
 
     res.status(200).json(tickets);
 
   } catch (error) {
-    console.error("getRefundTicketCardsController error:", error); // ← see the real error
+    console.error("getRefundTicketCardsController error:", error);
     res.status(500).json({
       message: "Failed to fetch refund tickets"
     });
   }
 }
+
 export async function getSupportTicketCardsController(req: Request, res: Response) {
-
   try {
-
     const { sub } = req.user as AuthPayload
 
     const tickets = await userService.getSupportTickets(Number(sub))
@@ -365,13 +347,10 @@ export async function getSupportTicketCardsController(req: Request, res: Respons
     res.status(200).json(tickets)
 
   } catch (error) {
-
     res.status(500).json({
       message: "Failed to fetch support tickets"
     })
-
   }
-
 }
 
 export async function getTicketDetailsController(req: Request, res: Response) {
