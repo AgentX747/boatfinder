@@ -11,7 +11,7 @@ const __dirname = path.dirname(__filename);
 // If ca.pem is in root and this file is in backend/config/, go up 2 levels
 const caPemPath = path.join(__dirname, '../../ca.pem');
 
-const pool = mysql.createPool({
+const connection = mysql.createPool({
   host: process.env.DB_HOST,
   port: parseInt(process.env.DB_PORT || '20091'),
   user: process.env.DB_USER,
@@ -31,7 +31,7 @@ const pool = mysql.createPool({
 });
 
 // Test connection
-pool.getConnection()
+connection.getConnection()
   .then(connection => {
     console.log('✅ Database connected successfully');
     connection.release();
@@ -40,4 +40,4 @@ pool.getConnection()
     console.error('❌ Database connection failed:', err.message);
   });
 
-export default pool;
+export default connection ;
