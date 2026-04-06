@@ -9,7 +9,7 @@ const __dirname = path.dirname(__filename);
 
 // Path to ca.pem - adjust based on where it is relative to this file
 // If ca.pem is in root and this file is in backend/config/, go up 2 levels
-const caPemPath = path.join(__dirname, '../../ca.pem');
+const caPemPath = path.join(__dirname, './ca.pem');
 
 export const connection = mysql.createPool({
   host: process.env.DB_HOST,
