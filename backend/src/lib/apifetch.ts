@@ -7,8 +7,8 @@ export async function apiFetch(
     credentials: "include",
   });
 
-  if (res.status === 401 && url !== "http://localhost:3000/auth/refresh") {
-    const refreshRes = await fetch("http://localhost:3000/auth/refresh", {
+  if (res.status === 401 && url !== "https://boatfinder.onrender.com/auth/refresh") {
+    const refreshRes = await fetch("https://boatfinder.onrender.com/auth/refresh", {
       method: "POST",
       credentials: "include",
     });

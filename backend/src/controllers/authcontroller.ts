@@ -121,7 +121,7 @@ export function refreshTokenController(req: Request, res: Response) {
   try {
     const payload = jwt.verify(
       refreshToken,
-      process.env.JWT_REFRESH_SECRET as string
+      process.env.TOKEN_SECRET as string
     ) as jwt.JwtPayload;
 
     const newAccessToken = jwt.sign(
@@ -131,7 +131,7 @@ export function refreshTokenController(req: Request, res: Response) {
         sid: payload.sid,
         role: payload.role,
       },
-      process.env.JWT_SECRET as string,
+      process.env.TOKEN_SECRET as string,
       { expiresIn: "15m" }
     );
 
