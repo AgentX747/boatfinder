@@ -120,7 +120,7 @@ async function saveSpotcastCache(
   await connection.query(`DELETE FROM spotcast_cache`);
   await connection.query(
     `INSERT INTO spotcast_cache (date_key, latitude, longitude, response_json, expires_at)
-     VALUES (?, ?, ?, ?, DATE_ADD(NOW(), INTERVAL 24 HOUR))`,
+     VALUES (?, ?, ?, ?, DATE_ADD(NOW(), INTERVAL 8 HOUR))`,
     [dateKey, lat, lon, JSON.stringify(data)]
   );
 }
