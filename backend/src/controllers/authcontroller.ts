@@ -90,7 +90,7 @@ export async function LoginController(req: Request, res: Response) {
     res.cookie("access_token", token, {
       httpOnly: true,
       secure: true,
-      sameSite: "strict",
+       sameSite: "none",
       maxAge: 15 * 60 * 1000,
     });
 
@@ -139,7 +139,7 @@ export function refreshTokenController(req: Request, res: Response) {
     res.cookie("access_token", newAccessToken, {
       httpOnly: true,
       secure: true,
-      sameSite: "strict",
+       sameSite: "none",
       maxAge: 15 * 60 * 1000,
     });
 
