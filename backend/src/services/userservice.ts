@@ -452,19 +452,38 @@ export async function submitTicket(body: any, userId: number) {
 
 export async function refundTicket(body: any, user: AuthPayload) {
   const { operatorId, image, message, ticketCode } = body;
-  const { sub } = user as AuthPayload;
+  const { sub } = user;
+
+  if (!operatorId || !ticketCode) {
+    throw { status: 400, message: "Missing required fields" };
+  }
 
   try {
+    const [checkoperatorexist]: any = await connection.execute(
+      `SELECT operator_id FROM boatoperators WHERE operator_id = ?`,
+      [operatorId]
+    );
+
+    if (!Array.isArray(checkoperatorexist) || checkoperatorexist.length === 0) {
+      throw { status: 404, message: "Operator not found" };
+    }
+
     const [insert]: any = await connection.execute(
-      `INSERT INTO requestrefund
-       (ticketcode, operator_id, fk_refund_userId, imageproof, message,status)
-       VALUES (?, ?, ?, ?, ? ,?)`,
-      [ticketCode, operatorId, sub, image, message,"pending"]
+      `INSERT INTO requestrefund 
+      (ticketcode, operator_id, fk_refund_userId, imageproof, message, status)
+      VALUES (?, ?, ?, ?, ?, ?)`,
+      [ticketCode, operatorId, sub, image, message, "pending"]
     );
 
     return { success: true, refundId: insert.insertId };
-  } catch (error) {
-    throw new Error(`Failed to submit refund: ${error}`);
+
+  } catch (error: any) {
+    console.error("Refund error:", error);
+
+    throw {
+      status: error?.status || 500,
+      message: error?.message || "Failed to submit refund",
+    };
   }
 }
 
