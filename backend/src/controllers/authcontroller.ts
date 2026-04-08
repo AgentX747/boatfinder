@@ -119,10 +119,11 @@ export function refreshTokenController(req: Request, res: Response) {
   }
 
   try {
-    const payload = jwt.verify(
-      refreshToken,
-      process.env.TOKEN_SECRET as string
-    ) as jwt.JwtPayload;
+   const payload = jwt.verify(
+  refreshToken,
+  process.env.TOKEN_SECRET as string,
+  { ignoreExpiration: true } // ✅ allow expired tokens to be refreshed
+) as jwt.JwtPayload;
 
     const newAccessToken = jwt.sign(
       {
