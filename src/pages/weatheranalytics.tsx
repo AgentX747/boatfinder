@@ -481,7 +481,7 @@ async function fetchWeatherData() {
 
     console.log('[v0] Starting weather data fetch...');
 
-    const res = await fetch('http://localhost:3000/weather/getweatherdata', {
+    const res = await fetch('https://boatfinder.onrender.com/weather/getweatherdata', {
       method: 'GET',
       credentials: 'include',
     });
@@ -664,7 +664,9 @@ async function fetchWeatherData() {
       try {
         console.log('[v0] Fetching AI response (attempt', retryCount + 1, ')');
 
-        const res = await fetch('http://localhost:3000/weather/airesponse');
+      const res = await fetch('https://boatfinder.onrender.com/weather/airesponse', {
+      credentials: 'include',
+    });
 
         if (res.status === 429) {
           if (retryCount < 3) {

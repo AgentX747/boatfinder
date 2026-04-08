@@ -58,7 +58,7 @@ const [selectedSchedule, setSelectedSchedule] = useState<{ departureTime: string
   useEffect(() => {
     async function fetchSession() {
       try {
-        const res = await apiFetch("http://localhost:3000/user/usersession", {
+        const res = await apiFetch("https://boatfinder.onrender.com/user/usersession", {
           method: "GET",
           credentials: "include",
         });
@@ -74,7 +74,7 @@ const [selectedSchedule, setSelectedSchedule] = useState<{ departureTime: string
 
     async function fetchBookingDetails() {
       try {
-        const res = await apiFetch(`http://localhost:3000/user/gettripdetails/${boatId}`, {
+        const res = await apiFetch(`https://boatfinder.onrender.com/user/gettripdetails/${boatId}`, {
           method: "GET",
           credentials: "include",
         });
@@ -151,7 +151,7 @@ const [selectedSchedule, setSelectedSchedule] = useState<{ departureTime: string
       formData.append("gcashName",  gcashName);
       formData.append("gcashImage", receiptFile);
 
-      const res = await apiFetch("http://localhost:3000/user/onlinebookboat", {
+      const res = await apiFetch("https://boatfinder.onrender.com/user/onlinebookboat", {
         method: "POST",
         credentials: "include",
         body: formData,

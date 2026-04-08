@@ -102,7 +102,7 @@ export default function AdminDashboard() {
   useEffect(() => {
     async function fetchAdminSession() {
       try {
-        const res = await apiFetch("http://localhost:3000/admin/adminsession", {
+        const res = await apiFetch("https://boatfinder.onrender.com/admin/adminsession", {
           method: "GET",
           credentials: "include",
         });
@@ -123,7 +123,7 @@ export default function AdminDashboard() {
 
     async function fetchBoatOperators() {
       try {
-        const res = await apiFetch("http://localhost:3000/admin/getboatoperators", { method: "GET", credentials: "include" });
+        const res = await apiFetch("https://boatfinder.onrender.com/admin/getboatoperators", { method: "GET", credentials: "include" });
         if (!res.ok) throw new Error("Failed to fetch boat operators");
         setBoatOperators(await res.json());
       } catch (error) { console.error("Failed to fetch boat operators:", error); }
@@ -131,7 +131,7 @@ export default function AdminDashboard() {
 
     async function fetchBoats() {
       try {
-        const res = await apiFetch("http://localhost:3000/admin/getallboats", { method: "GET", credentials: "include" });
+        const res = await apiFetch("https://boatfinder.onrender.com/admin/getallboats", { method: "GET", credentials: "include" });
         if (!res.ok) throw new Error("Failed to fetch boats");
         setBoats(await res.json());
       } catch (error) { console.error("Failed to fetch boats:", error); }
@@ -139,7 +139,7 @@ export default function AdminDashboard() {
 
     async function fetchAdminLogs() {
       try {
-        const res = await apiFetch("http://localhost:3000/admin/getadminlogs", { method: "GET", credentials: "include" });
+        const res = await apiFetch("https://boatfinder.onrender.com/admin/getadminlogs", { method: "GET", credentials: "include" });
         if (!res.ok) throw new Error("Failed to fetch admin logs");
         setAdminLogs(await res.json());
       } catch (error) { console.error("Failed to fetch admin logs:", error); }
@@ -147,7 +147,7 @@ export default function AdminDashboard() {
 
     async function fetchPendingTickets() {
       try {
-        const res = await apiFetch("http://localhost:3000/admin/getpendingtickets", { method: "GET", credentials: "include" });
+        const res = await apiFetch("https://boatfinder.onrender.com/admin/getpendingtickets", { method: "GET", credentials: "include" });
         if (!res.ok) throw new Error("Failed to fetch pending tickets");
         const data = await res.json();
         setPendingTickets(data.tickets);
@@ -163,7 +163,7 @@ export default function AdminDashboard() {
   }, [navigate]);
 
   async function handleLogout() {
-    await apiFetch("http://localhost:3000/auth/logout", { method: "POST", credentials: "include" });
+    await apiFetch("https://boatfinder.onrender.com/auth/logout", { method: "POST", credentials: "include" });
     navigate("/login");
   }
 

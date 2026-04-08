@@ -26,7 +26,7 @@ export default function ManageRefundsPage() {
   useEffect(() => {
     const init = async () => {
       try {
-        const sessionRes = await apiFetch("http://localhost:3000/boatoperator/boatoperatorsession", {
+        const sessionRes = await apiFetch("https://boatfinder.onrender.com/boatoperator/boatoperatorsession", {
           method: "GET",
           credentials: "include",
         });
@@ -36,7 +36,7 @@ export default function ManageRefundsPage() {
           return;
         }
 
-        const response = await apiFetch(`http://localhost:3000/boatoperator/getrefunddetails/${refundId}`, {
+        const response = await apiFetch(`https://boatfinder.onrender.com/boatoperator/getrefunddetails/${refundId}`, {
           method: "GET",
           credentials: "include",
         });
@@ -66,7 +66,7 @@ export default function ManageRefundsPage() {
       if (imageFile) formData.append("refundImage", imageFile);
 
       const res = await apiFetch(
-        `http://localhost:3000/boatoperator/confirmrefundreply/${refundId}`,
+        `https://boatfinder.onrender.com/boatoperator/confirmrefundreply/${refundId}`,
         {
           method: "POST",
           credentials: "include",

@@ -43,7 +43,7 @@ export default function RefundDetailsPage() {
   useEffect(() => {
     async function fetchSession() {
       try {
-        const res = await apiFetch("http://localhost:3000/user/usersession", {
+        const res = await apiFetch("https://boatfinder.onrender.com/user/usersession", {
           method: "GET",
           credentials: "include",
         })
@@ -59,8 +59,8 @@ export default function RefundDetailsPage() {
 
     async function fetchRefundDetails() {
       try {
-        const res = await apiFetch(`http://localhost:3000/user/getrefunddetails/${refundId}`, {
-          method: "GET",
+            const res = await apiFetch(`https://boatfinder.onrender.com/user/getrefunddetails/${refundId}`, {
+              method: "GET",
           credentials: "include",
         })
 

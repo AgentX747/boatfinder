@@ -53,7 +53,7 @@ export default function ViewTicketPage() {
   useEffect(() => {
     async function fetchSession() {
       try {
-        const res = await apiFetch("http://localhost:3000/user/usersession", {
+        const res = await apiFetch("https://boatfinder.onrender.com/user/usersession", {
           method: "GET",
           credentials: "include",
         })
@@ -70,7 +70,7 @@ export default function ViewTicketPage() {
     async function fetchTicketDetails() {
        
       try {
-        const res = await apiFetch(`http://localhost:3000/user/getticketdetails/${ticketId}`, {
+        const res = await apiFetch(`https://boatfinder.onrender.com/user/getticketdetails/${ticketId}`, {
           method: "GET",
           credentials: "include",
         })

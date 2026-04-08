@@ -33,7 +33,7 @@ export default function CurrentBookings() {
   useEffect(() => {
     const getSessionAndBooking = async () => {
       try {
-        const res = await apiFetch("http://localhost:3000/user/usersession", {
+        const res = await apiFetch("https://boatfinder.onrender.com/user/usersession", {
           method: "GET",
           credentials: "include",
         });
@@ -44,7 +44,7 @@ export default function CurrentBookings() {
         }
 
         const bookingRes = await apiFetch(
-          `http://localhost:3000/user/getcurrentbookingdetails/${bookingId}`,
+          `https://boatfinder.onrender.com/user/getcurrentbookingdetails/${bookingId}`,
           { method: "GET", credentials: "include" }
         );
 
@@ -82,7 +82,7 @@ export default function CurrentBookings() {
     setCancelling(true);
     try {
       const res = await apiFetch(
-        `http://localhost:3000/user/cancelbooking/${bookingDetails.bookingId}`,
+        `https://boatfinder.onrender.com/user/cancelbooking/${bookingDetails.bookingId}`,
         { method: "PATCH", credentials: "include" }
       );
       if (!res.ok) throw new Error("Failed to cancel booking");

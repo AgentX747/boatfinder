@@ -47,7 +47,7 @@ export default function BookBoat() {
   useEffect(() => {
     async function fetchSession() {
       try {
-        const res = await apiFetch("http://localhost:3000/user/usersession", {
+        const res = await apiFetch("https://boatfinder.onrender.com/user/usersession", {
           method: "GET",
           credentials: "include",
         });
@@ -61,8 +61,8 @@ export default function BookBoat() {
 
    async function getBookDetails() {
   try {
-    console.log('Fetching boat details for boatID:', boatID);
-    const response = await apiFetch(`http://localhost:3000/user/bookboat/${boatID}`, {
+    
+    const response = await apiFetch(`https://boatfinder.onrender.com/user/bookboat/${boatID}`, {
       method: 'GET',
       credentials: 'include',
     });
@@ -75,7 +75,7 @@ export default function BookBoat() {
     }
     
     const data = JSON.parse(text);
-    console.log('Book details received:', data); // ADD THIS LINE
+   
     setBookDetails(data);
   } catch (err) {
     console.error("Failed to fetch book details", err);
@@ -87,7 +87,7 @@ export default function BookBoat() {
 
 async function handlePhysicalBooking(bookingBody: any) {
   try {
-    const response = await apiFetch(`http://localhost:3000/user/physicalbookboat`, {
+    const response = await apiFetch(`https://boatfinder.onrender.com/user/physicalbookboat`, {
       method: "POST",
       credentials: "include",
       headers: {
@@ -97,7 +97,7 @@ async function handlePhysicalBooking(bookingBody: any) {
     });
 
     const data = await response.json();
-    console.log("Physical booking response:", data);
+ 
     if(response.ok) {
       alert("Booking successful!");
       navigate(`/userdashboard`);

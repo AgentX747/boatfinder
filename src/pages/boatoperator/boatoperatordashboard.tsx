@@ -187,7 +187,7 @@ const filteredBookingHistory = useMemo(() =>
     ), [boatCardInfo, searchQuery]);
 
   async function handleLogout() {
-    const res = await apiFetch("http://localhost:3000/auth/logout", {
+    const res = await apiFetch ("https://boatfinder.onrender.com/auth/logout", {
       method: "POST",
       credentials: "include",
     });
@@ -197,7 +197,7 @@ const filteredBookingHistory = useMemo(() =>
   useEffect(() => {
     async function fetchOperatorAndBoats() {
       try {
-        const sessionRes = await apiFetch("http://localhost:3000/boatoperator/boatoperatorsession", {
+        const sessionRes = await apiFetch ("https://boatfinder.onrender.com/boatoperator/boatoperatorsession", {
           method: "GET",
           credentials: "include",
         });
@@ -216,7 +216,7 @@ const filteredBookingHistory = useMemo(() =>
           role: sessionData.role,
         });
 
-        const boatsRes = await apiFetch("http://localhost:3000/boatoperator/getboats", {
+        const boatsRes = await apiFetch("https://boatfinder.onrender.com/boatoperator/getboats", {
           method: "GET",
           credentials: "include",
         });
@@ -235,7 +235,7 @@ const filteredBookingHistory = useMemo(() =>
     async function fetchPendingBookings() {
       try {
         const res = await apiFetch(
-          "http://localhost:3000/boatoperator/operatorpendingbookings",
+          "https://boatfinder.onrender.com/boatoperator/operatorpendingbookings",
           { method: "GET", credentials: "include" }
         );
         if (!res.ok) throw new Error("Failed to fetch pending bookings");
@@ -249,7 +249,7 @@ const filteredBookingHistory = useMemo(() =>
     async function fetchAcceptedBookings() {
       try {
         const res = await apiFetch(
-          "http://localhost:3000/boatoperator/operatoracceptedbookings",
+          "https://boatfinder.onrender.com/boatoperator/operatoracceptedbookings",
           { method: "GET", credentials: "include" }
         );
         if (!res.ok) throw new Error("Failed to fetch accepted bookings");
@@ -262,7 +262,7 @@ const filteredBookingHistory = useMemo(() =>
 
     async function fetchEditTicketBoatCard() {
       try {
-        const res = await apiFetch("http://localhost:3000/boatoperator/getticketcard", {
+        const res = await apiFetch("https://boatfinder.onrender.com/boatoperator/getticketcard", {
           method: "GET",
           credentials: "include",
         });
@@ -275,7 +275,7 @@ const filteredBookingHistory = useMemo(() =>
 
     async function fetchOperatorBookingHistory() {
       try {
-        const res = await apiFetch("http://localhost:3000/boatoperator/getoperatorbookinghistory", {
+        const res = await apiFetch("https://boatfinder.onrender.com/boatoperator/getoperatorbookinghistory", {
           method: "GET",
           credentials: "include",
         });
@@ -288,7 +288,7 @@ const filteredBookingHistory = useMemo(() =>
 
     async function getRefundDetails() {
       try {
-        const res = await apiFetch("http://localhost:3000/boatoperator/getoperatorrefundrequests", {
+        const res = await apiFetch("https://boatfinder.onrender.com/boatoperator/getoperatorrefundrequests", {
           method: "GET",
           credentials: "include",
         });
@@ -314,7 +314,7 @@ const filteredBookingHistory = useMemo(() =>
 
   async function confirmAcceptBooking() {
     const res = await apiFetch(
-      `http://localhost:3000/boatoperator/acceptbooking/${selectedBooking.bookingId}`,
+      `https://boatfinder.onrender.com/boatoperator/acceptbooking/${selectedBooking.bookingId}`,
       { method: "PATCH", credentials: "include" }
     );
     if (!res.ok) throw new Error("Failed to accept booking");
@@ -322,8 +322,8 @@ const filteredBookingHistory = useMemo(() =>
   }
 
   async function declineAcceptBooking() {
-  const res = await apiFetch(
-    `http://localhost:3000/boatoperator/declinebooking/${selectedBooking.bookingId}`,
+  const res = await apiFetch  (
+    `https://boatfinder.onrender.com/boatoperator/declinebooking/${selectedBooking.bookingId}`,
     { method: "PATCH", credentials: "include" }
   );
 

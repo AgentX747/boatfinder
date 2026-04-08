@@ -36,7 +36,7 @@ export default function BoatOperatorEditPage() {
     async function loadOperatorDetails() {
       try {
         const detailsRes = await apiFetch(
-          `http://localhost:3000/boatoperator/getcurrentoperatordetails/${boatoperatorId}`,
+          `https://boatfinder.onrender.com/boatoperator/getcurrentoperatordetails/${boatoperatorId}`,
           { method: 'GET', credentials: 'include' }
         )
 
@@ -86,7 +86,7 @@ export default function BoatOperatorEditPage() {
 
     try {
       const res = await apiFetch(
-        `http://localhost:3000/boatoperator/confirmeditboatoperator/${boatoperatorId}`,
+        `https://boatfinder.onrender.com/boatoperator/confirmeditboatoperator/${boatoperatorId}`,
         {
           method: 'PATCH',
           credentials: 'include',

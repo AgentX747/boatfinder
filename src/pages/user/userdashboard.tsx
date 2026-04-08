@@ -112,7 +112,7 @@ export default function UserDashboard() {
     if (!cancelBookingId) return
     setCancelling(true)
     try {
-      const res = await apiFetch(`http://localhost:3000/user/cancelbooking/${cancelBookingId}`, {
+      const res = await apiFetch(`https://boatfinder.onrender.com/user/cancelbooking/${cancelBookingId}`, {
         method: "PATCH",
         credentials: "include",
       })
@@ -133,7 +133,7 @@ export default function UserDashboard() {
     if (!cancelBookingId) return
     setCancelling(true)
     try {
-      const res = await apiFetch(`http://localhost:3000/user/cancelbooking/${cancelBookingId}`, {
+      const res = await apiFetch(`https://boatfinder.onrender.com/user/cancelbooking/${cancelBookingId}`, {
         method: "PATCH",
         credentials: "include",
       })
@@ -157,7 +157,7 @@ export default function UserDashboard() {
       if (searchBoat.routeTo?.trim())   params.append('routeTo',   searchBoat.routeTo.trim())
       if (searchBoat.departureTime)     params.append('departureTime', searchBoat.departureTime)
       if (searchBoat.arrivalTime)       params.append('arrivalTime',   searchBoat.arrivalTime)
-      const res = await fetch(`http://localhost:3000/user/searchboats?${params.toString()}`, { method: "GET", credentials: "include" })
+      const res = await fetch(`https://boatfinder.onrender.com/user/searchboats?${params.toString()}`, { method: "GET", credentials: "include" })
       setSearchResults(await res.json())
     } catch (err) { console.error("Search error:", err) }
   }
@@ -168,7 +168,7 @@ export default function UserDashboard() {
   }
 
   async function handleLogout() {
-    await apiFetch("http://localhost:3000/auth/logout", { method: "POST", credentials: "include" })
+    await apiFetch("https://boatfinder.onrender.com/auth/logout", { method: "POST", credentials: "include" })
     navigate("/login")
   }
 
@@ -182,7 +182,7 @@ export default function UserDashboard() {
       formData.append("operatorId",  refundDetails.operatorId)
       formData.append("message",     refundDetails.shortMessage)
       if (refundDetails.fileAttachment) formData.append("refundImage", refundDetails.fileAttachment)
-      const res = await fetch("http://localhost:3000/user/refundticket", { method: "POST", credentials: "include", body: formData })
+      const res = await fetch("https://boatfinder.onrender.com/user/refundticket", { method: "POST", credentials: "include", body: formData })
       if (!res.ok) { const err = await res.json(); throw new Error(err.message || "Failed") }
       alert("Refund request submitted successfully.")
       setRefundDetails({ ticketCode: "", operatorId: "", shortMessage: "", fileAttachment: null })
@@ -192,7 +192,7 @@ export default function UserDashboard() {
 
   async function submitTicket() {
     try {
-      const res = await apiFetch("http://localhost:3000/user/submitticket", {
+      const res = await apiFetch("https://boatfinder.onrender.com/user/submitticket", {
         method: "POST", credentials: "include",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(ticketDetails),
@@ -206,7 +206,7 @@ export default function UserDashboard() {
   useEffect(() => {
     async function fetchSession() {
       try {
-        const res  = await apiFetch("http://localhost:3000/user/usersession", { method: "GET", credentials: "include" })
+        const res  = await apiFetch("https://boatfinder.onrender.com/user/usersession", { method: "GET", credentials: "include" })
         const data = await res.json()
         setUserLoggedIn({ user_id: data.userId, firstName: data.firstName, lastName: data.lastName })
         if (res.status === 401 || res.status === 403) { navigate("/login"); return }
@@ -214,30 +214,30 @@ export default function UserDashboard() {
       } catch (err) { console.error("Failed to fetch session", err); navigate("/login") }
     }
     async function getallBoats() {
-      const res = await apiFetch("http://localhost:3000/user/getallboats", { method: "GET", credentials: "include" })
+      const res = await apiFetch("https://boatfinder.onrender.com/user/getallboats", { method: "GET", credentials: "include" })
       setBoats(await res.json())
     }
     async function getPendingBookings() {
       try {
-        const res = await apiFetch("http://localhost:3000/user/getpendingbookings", { method: "GET", credentials: "include" })
+        const res = await apiFetch("https://boatfinder.onrender.com/user/getpendingbookings", { method: "GET", credentials: "include" })
         setPendingBookings(await res.json())
       } catch (err) { console.error("Failed to fetch pending bookings", err) }
     }
     async function getAcceptedBookings() {
       try {
-        const res = await apiFetch("http://localhost:3000/user/getacceptedbookings", { method: "GET", credentials: "include" })
+        const res = await apiFetch("https://boatfinder.onrender.com/user/getacceptedbookings", { method: "GET", credentials: "include" })
         setAcceptedBookings(await res.json())
       } catch (err) { console.error("Failed to fetch accepted bookings", err) }
     }
     async function getHistoryBookings() {
       try {
-        const res = await apiFetch("http://localhost:3000/user/getbookinghistory", { method: "GET", credentials: "include" })
+        const res = await apiFetch("https://boatfinder.onrender.com/user/getbookinghistory", { method: "GET", credentials: "include" })
         setBookingHistory(await res.json())
       } catch (err) { console.error("Failed to fetch history bookings", err) }
     }
     async function fetchSupportTickets() {
       try {
-        const res  = await apiFetch("http://localhost:3000/user/getsupportticketcards", { method: "GET", credentials: "include" })
+        const res  = await apiFetch("https://boatfinder.onrender.com/user/getsupportticketcards", { method: "GET", credentials: "include" })
         if (!res.ok) { setSupportTickets([]); return }
         const data = await res.json()
         setSupportTickets(Array.isArray(data) ? data : [])
@@ -245,7 +245,7 @@ export default function UserDashboard() {
     }
     async function fetchRefundTickets() {
       try {
-        const res  = await apiFetch("http://localhost:3000/user/getrefundticketcards", { method: "GET", credentials: "include" })
+        const res  = await apiFetch("https://boatfinder.onrender.com/user/getrefundticketcards", { method: "GET", credentials: "include" })
         if (!res.ok) { setRefundTickets([]); return }
         const data = await res.json()
         setRefundTickets(Array.isArray(data) ? data : [])

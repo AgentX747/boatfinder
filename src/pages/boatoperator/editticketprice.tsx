@@ -22,7 +22,7 @@ const [ticketPrice, setTicketPrice] = useState<string>("");  // 👈 use string,
          async function fetchOperatorAndBoats() {
             try {
               // 1️⃣ Fetch operator session
-              const sessionRes = await apiFetch("http://localhost:3000/boatoperator/boatoperatorsession", {
+              const sessionRes = await apiFetch("https://boatfinder.onrender.com/boatoperator/boatoperatorsession", {
                 method: "GET",
                 credentials: "include",
               });
@@ -38,7 +38,7 @@ const [ticketPrice, setTicketPrice] = useState<string>("");  // 👈 use string,
             }
             }
             async function fetchBoatDetails() {
-               const res = await apiFetch(`http://localhost:3000/boatoperator/editticketprice/${boatID}`, {
+               const res = await apiFetch(`https://boatfinder.onrender.com/boatoperator/editticketprice/${boatID}`, {
                 method: "GET",
                 credentials: "include",
               });
@@ -76,7 +76,7 @@ function handleInputChange(
 async function confirmPriceChange() {
   try {
     const res = await apiFetch(
-      `http://localhost:3000/boatoperator/confirmeditticketprice/${boatID}`,
+      `https://boatfinder.onrender.com/boatoperator/confirmeditticketprice/${boatID}`,
       {
         method: "PUT",
         credentials: "include",

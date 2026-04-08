@@ -40,7 +40,7 @@ export default function EditBoat() {
     const fetchSession = async () => {
       try {
         const sessionRes = await apiFetch(
-          "http://localhost:3000/boatoperator/boatoperatorsession",
+          "https://boatfinder.onrender.com/boatoperator/boatoperatorsession",
           { method: "GET", credentials: "include" }
         );
         if (!sessionRes.ok) {
@@ -56,7 +56,7 @@ export default function EditBoat() {
       if (!boatID) return;
 
       const res = await apiFetch(
-        `http://localhost:3000/boatoperator/editboatdetails/${boatID}`,
+        `https://boatfinder.onrender.com/boatoperator/editboatdetails/${boatID}`,
         { method: "GET", credentials: "include" }
       );
 
@@ -158,7 +158,7 @@ export default function EditBoat() {
       if (editboat.legalDocs) formData.append("legaldocs", editboat.legalDocs);
 
       const response = await apiFetch(
-        `http://localhost:3000/boatoperator/confirmeditboat/${boatID}`,
+        `https://boatfinder.onrender.com/boatoperator/confirmeditboat/${boatID}`,
         {
           method: "PUT",
           credentials: "include",

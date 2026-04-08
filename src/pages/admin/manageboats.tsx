@@ -77,7 +77,7 @@ export default function ManageBoatsPage() {
   useEffect(() => {
     async function fetchAdminSession() {
       try {
-        const res = await apiFetch("http://localhost:3000/admin/adminsession", {
+        const res = await apiFetch("https://boatfinder.onrender.com/admin/adminsession", {
           method: "GET",
           credentials: "include",
         });
@@ -92,7 +92,7 @@ export default function ManageBoatsPage() {
     async function getBoatDetails() {
       try {
         const res = await apiFetch(
-          `http://localhost:3000/admin/getboatsbyid/${boatId}`,
+          `https://boatfinder.onrender.com/admin/getboatsbyid/${boatId}`,
           { method: "GET", credentials: "include" }
         );
         if (!res.ok) throw new Error("Failed to fetch boat details");
@@ -123,7 +123,7 @@ export default function ManageBoatsPage() {
 
   async function approveBoat() {
     const res = await apiFetch(
-      `http://localhost:3000/admin/confirmboatregistration/${boatId}`,
+      `https://boatfinder.onrender.com/admin/confirmboatregistration/${boatId}`,
       { method: "PATCH", credentials: "include" }
     );
     if (!res.ok) throw new Error("Failed to verify boat");
@@ -133,7 +133,7 @@ export default function ManageBoatsPage() {
 
   async function rejectBoat() {
     const res = await apiFetch(
-      `http://localhost:3000/admin/rejectboatregistration/${boatId}`,
+      `https://boatfinder.onrender.com/admin/rejectboatregistration/${boatId}`,
       { method: "PATCH", credentials: "include" }
     );
     if (!res.ok) throw new Error("Failed to reject boat");

@@ -28,7 +28,7 @@ export default function UserEditPage() {
   useEffect(() => {
     async function fetchSession() {
       try {
-        const res = await apiFetch("http://localhost:3000/user/usersession", {
+        const res = await apiFetch("https://boatfinder.onrender.com/user/usersession", {
           method: "GET",
           credentials: "include",
         })
@@ -46,7 +46,7 @@ export default function UserEditPage() {
     async function getCurrentDetails() {
       try {
         const res = await apiFetch(
-          `http://localhost:3000/user/getcurrentuserdetails/${userID}`,
+          `https://boatfinder.onrender.com/user/getcurrentuserdetails/${userID}`,
           {
             method: "GET",
             credentials: "include",
@@ -101,7 +101,7 @@ export default function UserEditPage() {
 
   try {
     const res = await apiFetch(
-      `http://localhost:3000/user/confirmedituser/${userID}`,
+      `https://boatfinder.onrender.com/user/confirmedituser/${userID}`,
       {
         method: "PATCH",
         credentials: "include",

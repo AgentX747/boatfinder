@@ -49,7 +49,7 @@ export default function WeatherForecastCard({ onViewDetails }: WeatherForecastCa
       try {
         setLoading(true);
         setError(null);
-        const res = await fetch('http://localhost:3000/weather/getweatherdata', {
+        const res = await fetch('https://boatfinder.onrender.com/weather/getweatherdata', {
           method: 'GET',
           credentials: 'include',
         });

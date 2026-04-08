@@ -108,7 +108,7 @@ if (boatForm.boatImage) {
       formData.append("legaldocs", boatForm.legalDocs); // key matches upload.single("legaldocs")
     }
 
-    const res = await fetch("http://localhost:3000/boatoperator/addboat", {
+    const res = await fetch("https://boatfinder.onrender.com/boatoperator/addboat", {
       method: "POST",
       credentials: "include",
       // ❌ No Content-Type header — browser sets multipart/form-data boundary automatically
@@ -140,7 +140,7 @@ async function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
   async function fetchBoatOperatorSession() {
     try {
       const res = await fetch(
-        "http://localhost:3000/boatoperator/boatoperatorsession", 
+        "https://boatfinder.onrender.com/boatoperator/boatoperatorsession", 
         {
           method: "GET",
           credentials: "include",

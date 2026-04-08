@@ -22,7 +22,7 @@ export default function AdminTicketReview() {
   useEffect(() => {
     async function fetchAdminSession() {
       try {
-        const res = await apiFetch('http://localhost:3000/admin/adminsession', {
+        const res = await apiFetch('https://boatfinder.onrender.com/admin/adminsession', {
           method: 'GET',
           credentials: 'include',
         });
@@ -39,7 +39,7 @@ export default function AdminTicketReview() {
 
     async function getTicketDetails() {
       try {
-        const res = await apiFetch(`http://localhost:3000/admin/getticketdetails/${ticketId}`, {
+        const res = await apiFetch(`https://boatfinder.onrender.com/admin/getticketdetails/${ticketId}`, {
           method: 'GET',
           credentials: 'include',
         });
@@ -67,7 +67,7 @@ export default function AdminTicketReview() {
     if (!adminReply.trim()) return;
     setIsSending(true);
     try {
-      const res = await apiFetch(`http://localhost:3000/admin/adminreply/${ticketId}`, {
+      const res = await apiFetch(`https://boatfinder.onrender.com/admin/adminreply/${ticketId}`, {
         method: 'PATCH',
         credentials: 'include',
         headers: { 'Content-Type': 'application/json' },

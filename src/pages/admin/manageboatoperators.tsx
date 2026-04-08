@@ -50,7 +50,7 @@ export default function ManageBoatOperatorsPage() {
        async function fetchAdminSession() {
           try {
             const res = await apiFetch(
-              "http://localhost:3000/admin/adminsession",
+              "https://boatfinder.onrender.com/admin/adminsession",
               {
                 method: "GET",
                 credentials: "include",
@@ -69,7 +69,7 @@ export default function ManageBoatOperatorsPage() {
           }
         }async function getBoatOperatorDetails() {
     try {
-      const res = await apiFetch(`http://localhost:3000/admin/getboatoperatorsbyid/${boatoperatorid}`, {
+      const res = await apiFetch(`https://boatfinder.onrender.com/admin/getboatoperatorsbyid/${boatoperatorid}`, {
         method: "GET",
         credentials: "include",
       });
@@ -97,7 +97,7 @@ export default function ManageBoatOperatorsPage() {
     },[boatoperatorid])
       
   async function approveOperator() {
-    const res = await apiFetch(`http://localhost:3000/admin/verifyboatoperator/${boatoperatorid}`, {
+    const res = await apiFetch(`https://boatfinder.onrender.com/admin/verifyboatoperator/${boatoperatorid}`, {
       method: "PATCH",
       credentials: "include",
     });
@@ -107,7 +107,7 @@ export default function ManageBoatOperatorsPage() {
   }
 
   async function rejectOperator() {
-    const res = await apiFetch(`http://localhost:3000/admin/rejectboatoperator/${boatoperatorid}`, {
+    const res = await apiFetch(`https://boatfinder.onrender.com/admin/rejectboatoperator/${boatoperatorid}`, {
       method: "PATCH",
       credentials: "include",
     });
