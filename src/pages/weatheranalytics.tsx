@@ -202,6 +202,33 @@ function weatherIcon(label: string): React.ComponentType<{ className?: string }>
   return Cloud;
 }
 
+function getWeatherIconColor(label: string): string {
+  if (label.includes('Sunny') || label.includes('Clear')) {
+    return 'text-orange-400';
+  }
+  if (
+    label.includes('rain') ||
+    label.includes('Drizzle') ||
+    label.includes('shower') ||
+    label.includes('torrential')
+  ) {
+    return 'text-blue-500';
+  }
+  if (label.includes('Cloudy') || label.includes('Overcast') || label.includes('cloud')) {
+    return 'text-gray-400';
+  }
+  if (label.includes('snow') || label.includes('Blizzard')) {
+    return 'text-cyan-300';
+  }
+  if (label.includes('Thunder') || label.includes('storm')) {
+    return 'text-yellow-400';
+  }
+  if (label.includes('Fog') || label.includes('Mist')) {
+    return 'text-slate-400';
+  }
+  return 'text-blue-400';
+}
+
 function formatHour(timeStr: string): string {
   const date = new Date(timeStr);
   return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: true });
@@ -241,9 +268,9 @@ function HourlyForecast({ hourly }: { hourly: HourForecast[] }) {
   const slice = hourly.slice(nowIdx, nowIdx + 8);
 
   return (
-    <div className="bg-card rounded-xl shadow-lg border border-border p-6">
-      <h2 className="text-xl font-bold mb-4 text-foreground">Hourly Forecast</h2>
-      <div className="overflow-x-auto [&::-webkit-scrollbar]:h-1.5 [&::-webkit-scrollbar-track]:bg-blue-100 dark:[&::-webkit-scrollbar-track]:bg-blue-950/40 [&::-webkit-scrollbar-thumb]:bg-blue-300 dark:[&::-webkit-scrollbar-thumb]:bg-blue-700 [&::-webkit-scrollbar-thumb]:rounded-full">
+    <div className="bg-gradient-to-br from-blue-50/50 to-blue-100/30 dark:from-blue-950/40 dark:to-blue-900/30 rounded-2xl shadow-lg border border-blue-200/60 dark:border-blue-800/40 p-6 backdrop-blur-sm">
+      <h2 className="text-2xl font-bold mb-5 text-blue-950 dark:text-blue-100">Hourly Forecast</h2>
+      <div className="overflow-x-auto [&::-webkit-scrollbar]:h-2 [&::-webkit-scrollbar-track]:bg-blue-100/50 dark:[&::-webkit-scrollbar-track]:bg-blue-950/30 [&::-webkit-scrollbar-thumb]:bg-blue-400 dark:[&::-webkit-scrollbar-thumb]:bg-blue-600 [&::-webkit-scrollbar-thumb]:rounded-full">
         <div className="flex gap-3 pb-3 min-w-max">
           {slice.map((hour, i) => {
             const temp = Math.round(hour.temp_c);
@@ -252,6 +279,7 @@ function HourlyForecast({ hourly }: { hourly: HourForecast[] }) {
 
             const label = hour.condition.text || weatherLabel(hour.condition.code);
             const Icon = weatherIcon(label);
+            const iconColor = getWeatherIconColor(label);
             const isRainy =
               label.includes('rain') ||
               label.includes('shower') ||
@@ -261,28 +289,28 @@ function HourlyForecast({ hourly }: { hourly: HourForecast[] }) {
             return (
               <div
                 key={`${hour.time}-${i}`}
-                className={`flex flex-col items-center p-4 rounded-xl border transition-all duration-200 cursor-default select-none w-24
+                className={`flex flex-col items-center p-4 rounded-xl border transition-all duration-200 cursor-default select-none w-24 backdrop-blur-xs
                   ${isRainy
-                    ? 'bg-blue-100/80 dark:bg-blue-900/40 border-blue-300 dark:border-blue-700'
-                    : 'bg-blue-50/60 dark:bg-blue-950/20 border-blue-200 dark:border-blue-800 hover:bg-blue-100/80 dark:hover:bg-blue-900/30'
+                    ? 'bg-blue-200/70 dark:bg-blue-800/50 border-blue-400/60 dark:border-blue-600/60 shadow-md'
+                    : 'bg-white/60 dark:bg-blue-900/40 border-blue-300/50 dark:border-blue-700/50 hover:bg-white/90 dark:hover:bg-blue-800/60 hover:shadow-md'
                   }`}
               >
-                <span className="text-xs font-semibold text-blue-500 dark:text-blue-400 mb-2 whitespace-nowrap">
+                <span className="text-xs font-bold text-blue-600 dark:text-blue-300 mb-2 whitespace-nowrap">
                   {formatHour(hour.time)}
                 </span>
-                <div className={`p-2 rounded-lg mb-2 ${isRainy ? 'bg-blue-200/60 dark:bg-blue-800/50' : 'bg-white/70 dark:bg-blue-900/40'}`}>
-                  <Icon className={`w-6 h-6 ${isRainy ? 'text-blue-600 dark:text-blue-300' : 'text-blue-400'}`} />
+                <div className={`p-2.5 rounded-lg mb-2 ${isRainy ? 'bg-blue-300/40 dark:bg-blue-700/60' : 'bg-white/80 dark:bg-blue-950/60'}`}>
+                  <Icon className={`w-6 h-6 ${iconColor}`} />
                 </div>
-                <span className="text-xl font-bold text-blue-900 dark:text-blue-100 mb-1">{temp}°</span>
-                <span className="text-xs text-blue-600 dark:text-blue-300 text-center whitespace-nowrap mb-3 line-clamp-2">
+                <span className="text-xl font-bold text-blue-950 dark:text-blue-100 mb-1">{temp}°</span>
+                <span className="text-xs text-blue-700 dark:text-blue-300 text-center whitespace-nowrap mb-3 line-clamp-2 font-medium">
                   {label}
                 </span>
-                <div className="w-full space-y-1.5 text-xs border-t border-blue-200 dark:border-blue-800 pt-2">
-                  <div className="flex items-center justify-between gap-1 text-blue-500 dark:text-blue-400">
+                <div className="w-full space-y-1.5 text-xs border-t border-blue-300/40 dark:border-blue-700/40 pt-2">
+                  <div className="flex items-center justify-between gap-1 text-blue-600 dark:text-blue-400">
                     <Droplets className="w-3 h-3 flex-shrink-0" />
                     <span className="font-medium">{precipProb}%</span>
                   </div>
-                  <div className="flex items-center justify-between gap-1 text-blue-500 dark:text-blue-400">
+                  <div className="flex items-center justify-between gap-1 text-blue-600 dark:text-blue-400">
                     <Wind className="w-3 h-3 flex-shrink-0" />
                     <span className="font-medium">{wind} km/h</span>
                   </div>
@@ -300,64 +328,69 @@ function DailyForecast({ forecast }: { forecast: DayForecast[] }) {
   const dailySlice = forecast.slice(0, 5);
 
   return (
-    <div className="bg-card p-6 rounded-xl shadow-lg border border-border">
-      <h2 className="text-xl font-bold mb-4 text-foreground">5-Day Forecast</h2>
+    <div className="bg-gradient-to-br from-blue-50/50 to-blue-100/30 dark:from-blue-950/40 dark:to-blue-900/30 p-6 rounded-2xl shadow-lg border border-blue-200/60 dark:border-blue-800/40 backdrop-blur-sm">
+      <h2 className="text-2xl font-bold mb-5 text-blue-950 dark:text-blue-100">5-Day Forecast</h2>
 
       {dailySlice.length === 0 ? (
-        <p className="text-muted-foreground text-sm">No forecast data available.</p>
+        <p className="text-blue-600 dark:text-blue-400 text-sm">No forecast data available.</p>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
           {dailySlice.map((day, i) => {
             const cond = day.day.condition.text || weatherLabel(day.day.condition.code);
             const DayIcon = weatherIcon(cond);
+            const iconColor = getWeatherIconColor(cond);
             const maxF = Math.round(day.day.maxtemp_f);
             const minF = Math.round(day.day.mintemp_f);
 
             return (
               <div
                 key={day.date}
-                className="bg-gradient-to-br from-blue-50 to-blue-100 dark:from-blue-950/30 dark:to-blue-900/40 p-4 rounded-lg border border-blue-200 dark:border-blue-800 hover:shadow-lg transition-all"
+                className="bg-gradient-to-br from-white/70 to-blue-50/50 dark:from-blue-900/50 dark:to-blue-950/40 p-4 rounded-xl border border-blue-200/70 dark:border-blue-700/60 hover:shadow-lg hover:border-blue-300 dark:hover:border-blue-600 transition-all duration-200 backdrop-blur-xs"
               >
-                <h3 className="font-semibold text-blue-900 dark:text-blue-100 mb-3">
+                <h3 className="font-bold text-blue-950 dark:text-blue-100 mb-3 text-sm">
                   {formatDay(day.date, i)}
                 </h3>
                 <div className="flex justify-center mb-3">
-                  <DayIcon className="w-8 h-8 text-blue-500 dark:text-blue-400" />
-                </div>
-                <p className="text-sm text-center text-blue-700 dark:text-blue-200 mb-3">{cond}</p>
-                <div className="flex justify-between items-center mb-3">
-                  <div className="text-center flex-1">
-                    <p className="text-xs text-blue-600 dark:text-blue-400">High</p>
-                    <p className="text-lg font-bold text-blue-900 dark:text-blue-100">{maxF}°</p>
+                  <div className="p-2.5 bg-white/60 dark:bg-blue-950/60 rounded-full">
+                    <DayIcon className={`w-8 h-8 ${iconColor}`} />
                   </div>
-                  <div className="h-8 border-l border-blue-300 dark:border-blue-700"></div>
+                </div>
+                <p className="text-xs text-center text-blue-700 dark:text-blue-300 mb-4 font-medium line-clamp-2">{cond}</p>
+                <div className="flex justify-between items-center mb-4">
                   <div className="text-center flex-1">
-                    <p className="text-xs text-blue-600 dark:text-blue-400">Low</p>
-                    <p className="text-lg font-bold text-blue-900 dark:text-blue-100">{minF}°</p>
+                    <p className="text-xs text-blue-600 dark:text-blue-400 font-semibold">High</p>
+                    <p className="text-lg font-bold text-blue-950 dark:text-blue-100">{maxF}°</p>
+                  </div>
+                  <div className="h-8 border-l border-blue-300/40 dark:border-blue-700/40"></div>
+                  <div className="text-center flex-1">
+                    <p className="text-xs text-blue-600 dark:text-blue-400 font-semibold">Low</p>
+                    <p className="text-lg font-bold text-blue-950 dark:text-blue-100">{minF}°</p>
                   </div>
                 </div>
 
-                <div className="border-t border-blue-200 dark:border-blue-800 pt-3 space-y-2 text-xs">
+                <div className="border-t border-blue-200/50 dark:border-blue-700/40 pt-3 space-y-2 text-xs">
                   <div className="flex items-center justify-between text-blue-700 dark:text-blue-300">
-                    <div className="flex items-center gap-1">
+                    <div className="flex items-center gap-1.5">
                       <Droplets className="w-3.5 h-3.5 text-blue-500" />
-                      <span>Precip</span>
+                      <span className="font-medium">Precip</span>
                     </div>
-                    <span className="font-medium">{day.day.totalprecip_mm.toFixed(1)} mm</span>
+                    <span className="font-semibold text-blue-900 dark:text-blue-100">{day.day.totalprecip_mm.toFixed(1)} mm</span>
                   </div>
                   <div className="flex items-center justify-between text-blue-700 dark:text-blue-300">
-                    <div className="flex items-center gap-1">
+                    <div className="flex items-center gap-1.5">
                       <Wind className="w-3.5 h-3.5 text-blue-500" />
-                      <span>Max Wind</span>
+                      <span className="font-medium">Wind</span>
                     </div>
-                    <span className="font-medium">{Math.round(day.day.maxwind_kph)} km/h</span>
+                    <span className="font-semibold text-blue-900 dark:text-blue-100">{Math.round(day.day.maxwind_kph)} km/h</span>
                   </div>
                   <div className="flex items-center justify-between text-blue-700 dark:text-blue-300">
-                    <div className="flex items-center gap-1">
+                    <div className="flex items-center gap-1.5">
                       <Cloud className="w-3.5 h-3.5 text-blue-500" />
-                      <span>Rain</span>
+                      <span className="font-medium">Rain</span>
                     </div>
-                    <span className="font-medium">{day.day.daily_will_it_rain ? 'Yes' : 'No'}</span>
+                    <span className={`font-semibold ${day.day.daily_will_it_rain ? 'text-blue-600 dark:text-blue-300' : 'text-blue-500 dark:text-blue-400'}`}>
+                      {day.day.daily_will_it_rain ? 'Yes' : 'No'}
+                    </span>
                   </div>
                 </div>
               </div>
@@ -384,10 +417,15 @@ function AIWeatherSummary({ data }: { data: AIForecastData }) {
   };
 
   return (
-    <div className="space-y-4">
-      <div className="flex items-center gap-2 mb-6">
-        <TrendingUp className="w-5 h-5 text-indigo-600 dark:text-indigo-400" />
-        <h2 className="text-2xl font-bold text-foreground">Daily AI Weather Summary</h2>
+    <div className="space-y-5">
+      <div className="flex items-center gap-3 mb-6">
+        <div className="p-2.5 bg-gradient-to-br from-blue-500 to-blue-600 rounded-lg">
+          <TrendingUp className="w-6 h-6 text-white" />
+        </div>
+        <div>
+          <h2 className="text-2xl font-bold text-blue-950 dark:text-blue-100">Daily AI Weather Summary</h2>
+          <p className="text-xs text-blue-600 dark:text-blue-400 mt-0.5">AI-powered forecast analysis</p>
+        </div>
       </div>
 
       <div className="grid grid-cols-1 gap-4">
@@ -396,17 +434,17 @@ function AIWeatherSummary({ data }: { data: AIForecastData }) {
           return (
             <div
               key={day.date}
-              className={`p-5 rounded-lg border shadow-md hover:shadow-lg transition-shadow ${style.container}`}
+              className={`p-5 rounded-xl border shadow-md hover:shadow-lg transition-all duration-200 backdrop-blur-xs ${style.container}`}
             >
               <div className="flex items-start justify-between gap-4 mb-3">
                 <div className="flex-1">
-                  <p className={`text-sm font-semibold ${style.text}`}>{formatDate(day.date)}</p>
-                  <p className={`text-xs ${style.text} opacity-75 mt-0.5`}>{day.date}</p>
+                  <p className={`text-sm font-bold ${style.text}`}>{formatDate(day.date)}</p>
+                  <p className={`text-xs ${style.text} opacity-70 mt-1`}>{day.date}</p>
                 </div>
-                <span className={`px-4 py-1 rounded-full text-sm font-bold whitespace-nowrap ${style.badge}`}>
+                <span className={`px-3 py-1.5 rounded-full text-xs font-bold whitespace-nowrap ${style.badge} shadow-sm`}>
                   {day.classification === 'GO' && '✓ GO'}
                   {day.classification === 'CAUTION' && '⚠ CAUTION'}
-                  {day.classification === 'HIGH' && '🚫 HIGH RISK'}
+                  {day.classification === 'HIGH' && '🚫 HIGH'}
                 </span>
               </div>
 
@@ -427,23 +465,27 @@ function WeatherAlerts({ alerts }: { alerts: AlertType[] }) {
   if (alerts.length === 0) return null;
 
   return (
-    <div className="space-y-3">
-      <h2 className="text-xl font-bold text-foreground flex items-center gap-2">
-        <AlertCircle className="w-5 h-5 text-amber-600 dark:text-amber-400" />
-        Weather Alerts
-      </h2>
+    <div className="space-y-4">
+      <div className="flex items-center gap-3">
+        <div className="p-2.5 bg-gradient-to-br from-amber-500 to-orange-600 rounded-lg">
+          <AlertCircle className="w-6 h-6 text-white" />
+        </div>
+        <h2 className="text-2xl font-bold text-blue-950 dark:text-blue-100">Weather Alerts</h2>
+      </div>
       <div className="space-y-3">
         {alerts.map((alert, idx) => (
           <div
             key={idx}
-            className="bg-amber-50 dark:bg-amber-950/30 border border-amber-300 dark:border-amber-700 rounded-lg p-4"
+            className="bg-gradient-to-br from-amber-50/70 to-orange-50/70 dark:from-amber-950/40 dark:to-orange-950/40 border border-amber-300/70 dark:border-amber-700/60 rounded-xl p-4 shadow-sm hover:shadow-md transition-shadow backdrop-blur-xs"
           >
             <div className="flex items-start gap-3">
-              <alert.Icon className="w-5 h-5 text-amber-600 dark:text-amber-400 mt-0.5 flex-shrink-0" />
+              <div className="p-2 bg-white/60 dark:bg-amber-950/60 rounded-lg mt-0.5 flex-shrink-0">
+                <alert.Icon className="w-5 h-5 text-amber-600 dark:text-amber-400" />
+              </div>
               <div className="flex-1">
-                <h3 className="font-semibold text-amber-900 dark:text-amber-100">{alert.type}</h3>
-                <p className="text-sm text-amber-800 dark:text-amber-200 mt-1">{alert.description}</p>
-                <span className="text-xs text-amber-600 dark:text-amber-400 mt-2 inline-block">
+                <h3 className="font-bold text-amber-950 dark:text-amber-100">{alert.type}</h3>
+                <p className="text-sm text-amber-800 dark:text-amber-200 mt-1.5 leading-relaxed">{alert.description}</p>
+                <span className="text-xs text-amber-700 dark:text-amber-400 mt-2.5 inline-block font-medium">
                   {alert.time}
                 </span>
               </div>
@@ -693,10 +735,12 @@ async function fetchWeatherData() {
 
   if (loading) {
     return (
-      <main className="min-h-screen bg-background flex items-center justify-center">
-        <div className="text-center space-y-3">
-          <Cloud className="w-10 h-10 text-blue-400 animate-pulse mx-auto" />
-          <p className="text-muted-foreground text-sm">Loading weather data…</p>
+      <main className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-blue-50 dark:from-blue-950/40 dark:via-slate-950 dark:to-blue-950/40 flex items-center justify-center">
+        <div className="text-center space-y-4">
+          <div className="p-4 bg-blue-100 dark:bg-blue-900/50 rounded-full w-fit mx-auto">
+            <Cloud className="w-12 h-12 text-blue-500 dark:text-blue-400 animate-pulse" />
+          </div>
+          <p className="text-blue-600 dark:text-blue-300 text-sm font-medium">Loading weather data…</p>
         </div>
       </main>
     );
@@ -704,11 +748,13 @@ async function fetchWeatherData() {
 
   if (error || !location || !current) {
     return (
-      <main className="min-h-screen bg-background flex items-center justify-center p-4">
-        <div className="text-center space-y-3 max-w-md">
-          <AlertCircle className="w-10 h-10 text-red-400 mx-auto" />
-          <h1 className="text-xl font-bold text-foreground">Unable to Load Weather</h1>
-          <p className="text-muted-foreground text-sm">{error || 'No data available'}</p>
+      <main className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-blue-50 dark:from-blue-950/40 dark:via-slate-950 dark:to-blue-950/40 flex items-center justify-center p-4">
+        <div className="text-center space-y-4 max-w-md">
+          <div className="p-4 bg-red-100 dark:bg-red-900/50 rounded-full w-fit mx-auto">
+            <AlertCircle className="w-12 h-12 text-red-500 dark:text-red-400" />
+          </div>
+          <h1 className="text-2xl font-bold text-blue-950 dark:text-blue-100">Unable to Load Weather</h1>
+          <p className="text-blue-600 dark:text-blue-400 text-sm">{error || 'No data available'}</p>
         </div>
       </main>
     );
@@ -718,7 +764,7 @@ async function fetchWeatherData() {
   const feelsLike = Math.round(currentTemp);
 
   return (
-    <main className="min-h-screen bg-background p-4 md:p-8">
+    <main className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-blue-50 dark:from-blue-950/40 dark:via-slate-950 dark:to-blue-950/40 p-4 md:p-8">
       <div className="max-w-7xl mx-auto space-y-6">
         {/* ── Current Weather Header ─────────────────────────────────────────── */}
                       <div className="relative bg-gradient-to-br from-blue-500 via-blue-600 to-blue-700 p-8 text-white rounded-2xl shadow-2xl border border-blue-400/30 overflow-hidden">
@@ -744,11 +790,15 @@ async function fetchWeatherData() {
             <div className="flex-shrink-0">
               <div className="mb-6">
                 <div className="flex items-start gap-4 mb-8">
-                  <div className="flex-shrink-0">
+                  <div className="flex-shrink-0 p-4 bg-white/20 rounded-2xl backdrop-blur-sm">
                     {(() => {
                       const WeatherIcon = weatherIcon(
                         current.condition.text || weatherLabel(current.condition.code)
                       );
+                      const iconColor = getWeatherIconColor(
+                        current.condition.text || weatherLabel(current.condition.code)
+                      );
+                      // Override to white for the header, keep colorful for other sections
                       return <WeatherIcon className="w-16 h-16 text-white" />;
                     })()}
                   </div>
