@@ -288,7 +288,6 @@ export async function onlinebookBoatController(req: Request, res: Response) {
 export async function refundTicketController(req: Request, res: Response) {
   try {
     const user = req.user as AuthPayload;
-
     const { operatorId, message, ticketCode, image } = req.body;
 
     if (!ticketCode || !operatorId || !message) {
@@ -309,11 +308,11 @@ export async function refundTicketController(req: Request, res: Response) {
       data: result,
     });
 
-  } catch (error) {
-    console.error("Refund ticket error:", error);
-    return res.status(500).json({
+  } catch (error: any) {  // ✅ Type as any to access .status
+    console.error(error);
+    return res.status(error?.status || 500).json({  // ✅ Forward the status
       success: false,
-      message: "Internal server error.",
+      message: error?.message || "Failed to submit refund request.",
     });
   }
 }

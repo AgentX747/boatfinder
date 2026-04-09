@@ -459,22 +459,20 @@ export async function refundTicket(body: any, user: AuthPayload) {
     throw { status: 400, message: "Missing required fields" };
   }
 
+  // ✅ Operator check outside the insert try/catch so errors don't get swallowed
+  const [checkOperatorExist]: any = await connection.execute(
+    `SELECT operator_id FROM boatoperators WHERE operator_id = ?`,
+    [operatorId]
+  );
+
+  if (!Array.isArray(checkOperatorExist) || checkOperatorExist.length === 0) {
+    throw { status: 404, message: "Operator not found" };
+  }
+
   try {
-    const [checkoperatorexist]: any = await connection.execute(
-      `SELECT operator_id FROM boatoperators WHERE operator_id = ?`,
-      [operatorId]
-    );
-    if(!checkoperatorexist || checkoperatorexist.length === 0) {
-      throw { status: 404, message: "Operator not found" };
-    }
-
-    if (!Array.isArray(checkoperatorexist) || checkoperatorexist.length === 0) {
-      throw { status: 404, message: "Operator not found" };
-    }
-
     const [insert]: any = await connection.execute(
       `INSERT INTO requestrefund 
-      (ticketcode, operator_id, fk_refund_userId, imageproof, message, status)
+      (ticketcode, operator_id, fk_refund_userId, imageproof, message, status) 
       VALUES (?, ?, ?, ?, ?, ?)`,
       [ticketCode, operatorId, sub, image, message, "pending"]
     );
@@ -483,7 +481,6 @@ export async function refundTicket(body: any, user: AuthPayload) {
 
   } catch (error: any) {
     console.error("Refund error:", error);
-
     throw {
       status: error?.status || 500,
       message: error?.message || "Failed to submit refund",

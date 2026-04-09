@@ -197,10 +197,10 @@ async function submitRefund() {
       const err = await res.json();
       
       // Handle specific error for operator not found
-      if (res.status === 404 || res.status ===401 && err.message === "Operator not found") {
-        alert("Operator not found. Please check the operator ID and try again.");
-        return;
-      }
+      if (res.status === 404 || (res.status === 401 && err.message === "Operator not found")) {
+  alert("Operator not found. Please check the operator ID and try again.");
+  return;
+}
       
       throw new Error(err.message || "Failed to submit refund request");
     }
