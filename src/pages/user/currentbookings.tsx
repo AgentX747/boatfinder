@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from "react";
-import { Calendar, Ticket, MapPin, Clock, CreditCard, DollarSign, CheckCircle, X, ShieldCheck } from "lucide-react";
+import { Calendar, Ticket, MapPin, Clock, CreditCard, DollarSign, CheckCircle, X, ShieldCheck, Building2 } from "lucide-react";
 import { apiFetch } from "../../utils/apifetch";
 import { useNavigate, useParams } from "react-router-dom";
 
@@ -227,6 +227,14 @@ export default function CurrentBookings() {
                     <label className="text-sm font-semibold text-gray-600">Payment Method</label>
                   </div>
                   <p className="text-lg text-gray-900 font-medium ml-7 capitalize">{bookingDetails.paymentMethod}</p>
+                </div>
+
+                <div>
+                  <div className="flex items-center gap-2 mb-2">
+                    <Building2 className="w-5 h-5 text-blue-600" />
+                    <label className="text-sm font-semibold text-gray-600">Operator ID</label>
+                  </div>
+                  <p className="text-lg text-gray-900 font-medium ml-7">{bookingDetails.operatorId}</p>
                 </div>
               </div>
 
