@@ -247,6 +247,7 @@ export async function getCurrentBookingDetails(
     const [rows] = await connection.execute<RowDataPacket[]>(
       `SELECT 
         b.booking_id,
+        fk_booking_operatorId AS operatorId,
         b.boatName,
         b.ticketcode,
         b.booking_date,
@@ -463,6 +464,9 @@ export async function refundTicket(body: any, user: AuthPayload) {
       `SELECT operator_id FROM boatoperators WHERE operator_id = ?`,
       [operatorId]
     );
+    if(!checkoperatorexist || checkoperatorexist.length === 0) {
+      throw { status: 404, message: "Operator not found" };
+    }
 
     if (!Array.isArray(checkoperatorexist) || checkoperatorexist.length === 0) {
       throw { status: 404, message: "Operator not found" };

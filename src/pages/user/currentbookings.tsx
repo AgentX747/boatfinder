@@ -20,6 +20,7 @@ interface BookingDetails {
   payment_status: string | null;
   payment_amount: number | null;
   payment_created_at: string | null;
+  operatorId: number;
 }
 
 export default function CurrentBookings() {
@@ -67,6 +68,7 @@ export default function CurrentBookings() {
           payment_status:      bookingData.payment_status ?? null,
           payment_amount:      bookingData.payment_amount ?? null,
           payment_created_at:  bookingData.payment_created_at ?? null,
+          operatorId:          bookingData.operatorId,
         });
 
       } catch (error) {

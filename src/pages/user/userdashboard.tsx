@@ -172,24 +172,53 @@ export default function UserDashboard() {
     navigate("/login")
   }
 
-  async function submitRefund() {
-    try {
-      if (!refundDetails.ticketCode || !refundDetails.operatorId || !refundDetails.shortMessage) {
-        alert("Please fill in all required fields."); return
-      }
-      const formData = new FormData()
-      formData.append("ticketCode",  refundDetails.ticketCode)
-      formData.append("operatorId",  refundDetails.operatorId)
-      formData.append("message",     refundDetails.shortMessage)
-      if (refundDetails.fileAttachment) formData.append("refundImage", refundDetails.fileAttachment)
-      const res = await fetch("https://boatfinder.onrender.com/user/refundticket", { method: "POST", credentials: "include", body: formData })
-      if (!res.ok) { const err = await res.json(); throw new Error(err.message || "Failed") }
-      alert("Refund request submitted successfully.")
-      setRefundDetails({ ticketCode: "", operatorId: "", shortMessage: "", fileAttachment: null })
-      setTicketTab("message")
-    } catch (error) { console.error(error); alert("Failed to submit refund request.") }
-  }
+async function submitRefund() {
+  try {
+    if (!refundDetails.ticketCode || !refundDetails.operatorId || !refundDetails.shortMessage) {
+      alert("Please fill in all required fields."); 
+      return;
+    }
 
+    const formData = new FormData();
+    formData.append("ticketCode",  refundDetails.ticketCode);
+    formData.append("operatorId",  refundDetails.operatorId);
+    formData.append("message",     refundDetails.shortMessage);
+    if (refundDetails.fileAttachment) {
+      formData.append("refundImage", refundDetails.fileAttachment);
+    }
+
+    const res = await fetch("https://boatfinder.onrender.com/user/refundticket", { 
+      method: "POST", 
+      credentials: "include", 
+      body: formData 
+    });
+
+    if (!res.ok) { 
+      const err = await res.json();
+      
+      // Handle specific error for operator not found
+      if (res.status === 404 && err.message === "Operator not found") {
+        alert("Operator not found. Please check the operator ID and try again.");
+        return;
+      }
+      
+      throw new Error(err.message || "Failed to submit refund request");
+    }
+
+    alert("Refund request submitted successfully.");
+    setRefundDetails({ 
+      ticketCode: "", 
+      operatorId: "", 
+      shortMessage: "", 
+      fileAttachment: null 
+    });
+    setTicketTab("message");
+
+  } catch (error: any) { 
+    console.error(error); 
+    alert(error.message || "Failed to submit refund request."); 
+  }
+}
   async function submitTicket() {
     try {
       const res = await apiFetch("https://boatfinder.onrender.com/user/submitticket", {
