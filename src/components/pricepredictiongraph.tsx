@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import {
   AreaChart, Area, BarChart, Bar, LineChart, Line,
   ComposedChart, CartesianGrid, XAxis, YAxis, Tooltip,
@@ -321,6 +321,40 @@ export default function PricePredictionGraph() {
   const [loading,   setLoading]   = useState(true);
   const [error,     setError]     = useState<string | null>(null);
   const [tab,       setTab]       = useState<"monthly" | "yearly" | "seasonal" | "scenarios">("monthly");
+  const [position, setPosition] = useState({ x: 0, y: 0 });
+  const [isDragging, setIsDragging] = useState(false);
+  const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
+  const containerRef = useRef<HTMLDivElement>(null);
+  const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
+
+  useEffect(() => {
+    const handleResize = () => setIsMobile(window.innerWidth < 768);
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
+
+  const handleTouchStart = (e: React.TouchEvent) => {
+    if (!isMobile) return;
+    setIsDragging(true);
+    setDragStart({ x: e.touches[0].clientX - position.x, y: e.touches[0].clientY - position.y });
+  };
+
+  const handleTouchMove = (e: React.TouchEvent) => {
+    if (!isDragging || !isMobile) return;
+    const x = e.touches[0].clientX - dragStart.x;
+    const y = e.touches[0].clientY - dragStart.y;
+    
+    // Constrain movement within viewport
+    const constrained = {
+      x: Math.max(-300, Math.min(x, 300)),
+      y: Math.max(-300, Math.min(y, 300))
+    };
+    setPosition(constrained);
+  };
+
+  const handleTouchEnd = () => {
+    setIsDragging(false);
+  };
 
   useEffect(() => {
     Promise.all([
@@ -378,7 +412,35 @@ export default function PricePredictionGraph() {
   const iranShockDate = "Mar 2026";
 
   return (
-    <div style={S.shell}>
+    <div 
+      ref={containerRef}
+      style={{
+        ...S.shell,
+        transform: isMobile ? `translate(${position.x}px, ${position.y}px)` : 'none',
+        transition: isDragging ? 'none' : 'transform 0.3s ease-out',
+        cursor: isMobile && isDragging ? 'grabbing' : isMobile ? 'grab' : 'auto',
+      }}
+      onTouchStart={handleTouchStart}
+      onTouchMove={handleTouchMove}
+      onTouchEnd={handleTouchEnd}
+    >
+
+      {/* Mobile Drag Hint */}
+      {isMobile && (
+        <div style={{
+          background: '#dbeafe',
+          border: '1px solid #93c5fd',
+          borderRadius: '8px',
+          padding: '10px 12px',
+          marginBottom: '12px',
+          fontSize: '12px',
+          color: '#0369a1',
+          textAlign: 'center' as const,
+          fontWeight: 500,
+        }}>
+          👆 Drag to move the graph if space is lacking
+        </div>
+      )}
 
       {/* ── Header ── */}
       <div style={S.header}>
