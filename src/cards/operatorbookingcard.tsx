@@ -56,90 +56,100 @@ export default function OperatorBookingHistoryCard({
   boatstatus,
 }: BookingHistoryCardProps) {
     return (
-        <div className="bg-white rounded-xl shadow-md border border-blue-100 overflow-hidden hover:shadow-lg transition-shadow">
+        <div className="bg-white rounded-xl shadow-md border border-blue-100 overflow-hidden hover:shadow-lg transition-shadow w-full">
             <div className="flex flex-col md:flex-row">
-                <div className="md:w-64 h-48 md:h-auto bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center">
-                    <svg className="w-24 h-24 text-white opacity-50" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                {/* Image Section */}
+                <div className="w-full md:w-64 h-40 md:h-auto bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center flex-shrink-0">
+                    <svg className="w-16 h-16 md:w-24 md:h-24 text-white opacity-50" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M3 15a4 4 0 004 4h9a5 5 0 10-.1-9.999 5.002 5.002 0 10-9.78 2.096A4.001 4.001 0 003 15z" />
                     </svg>
                 </div>
 
-                <div className="flex-1 p-6">
-                    <div className="flex flex-col md:flex-row md:items-start md:justify-between mb-4">
-                        {/* Left: Boat & Passenger Info */}
-                        <div>
-                            <h3 className="text-xl font-bold text-blue-900 mb-2 uppercase tracking-wide">
-                                {boatName}
-                            </h3>
-                            <p className="text-blue-600 text-sm mb-1">
-                                Booking ID: <span className="font-medium uppercase">#{booking_id}</span>
-                            </p>
-                            <p className="text-blue-600 text-sm mb-1">
-                                Passenger: <span className="font-medium uppercase">{passengerName}</span>
-                            </p>
-                             <p className="text-blue-600 text-sm mb-1">
-                                Ticket Code: <span className="font-medium uppercase">{ticketcode}</span>
-                            </p>
-                        </div>
-
-                        {/* Right: Status Badges */}
-                        <div className="flex flex-col gap-3 items-center mt-2 md:mt-0">
-                            <div className="flex flex-col items-center gap-1">
-                                <p className="text-xs text-gray-500 uppercase tracking-wide font-medium">Booking Status</p>
-                                <span className={`px-4 py-1 rounded-full text-xs font-semibold uppercase tracking-wide w-28 text-center border ${bookingStatusStyles[status] ?? 'bg-gray-100 text-gray-700 border-gray-300'}`}>
-                                    {bookingStatusLabel[status] ?? status}
-                                </span>
+                {/* Content Section */}
+                <div className="flex-1 p-4 md:p-6 flex flex-col gap-3">
+                    {/* Header: Boat & Passenger Info + Status Badges */}
+                    <div className="flex flex-col gap-3">
+                        <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
+                            {/* Left: Boat & Passenger Info */}
+                            <div className="min-w-0">
+                                <h3 className="text-lg md:text-xl font-bold text-blue-900 mb-1 uppercase tracking-wide truncate">
+                                    {boatName}
+                                </h3>
+                                <div className="flex flex-col gap-1 text-xs md:text-sm text-blue-600">
+                                    <p className="truncate">
+                                        Booking ID: <span className="font-medium uppercase">#{booking_id}</span>
+                                    </p>
+                                    <p className="truncate">
+                                        Passenger: <span className="font-medium uppercase">{passengerName}</span>
+                                    </p>
+                                    <p className="truncate">
+                                        Ticket Code: <span className="font-medium uppercase">{ticketcode}</span>
+                                    </p>
+                                </div>
                             </div>
-                            <div className="flex flex-col items-center gap-1">
-                                <p className="text-xs text-gray-500 uppercase tracking-wide font-medium">Boat Status</p>
-                                <span className={`px-4 py-1 rounded-full text-xs font-semibold uppercase tracking-wide w-28 text-center border ${boatStatusStyles[boatstatus] ?? 'bg-gray-100 text-gray-700 border-gray-300'}`}>
-                                    {boatStatusLabel[boatstatus] ?? boatstatus}
-                                </span>
+
+                            {/* Right: Status Badges - Responsive */}
+                            <div className="flex flex-col sm:flex-col gap-2 sm:gap-3 flex-shrink-0">
+                                <div className="flex flex-col items-start sm:items-center gap-1">
+                                    <p className="text-xs text-gray-500 uppercase tracking-wide font-medium">Booking Status</p>
+                                    <span className={`px-3 py-1 rounded-full text-xs font-semibold uppercase tracking-wide w-full sm:w-28 text-center border ${bookingStatusStyles[status] ?? 'bg-gray-100 text-gray-700 border-gray-300'}`}>
+                                        {bookingStatusLabel[status] ?? status}
+                                    </span>
+                                </div>
+                                <div className="flex flex-col items-start sm:items-center gap-1">
+                                    <p className="text-xs text-gray-500 uppercase tracking-wide font-medium">Boat Status</p>
+                                    <span className={`px-3 py-1 rounded-full text-xs font-semibold uppercase tracking-wide w-full sm:w-28 text-center border ${boatStatusStyles[boatstatus] ?? 'bg-gray-100 text-gray-700 border-gray-300'}`}>
+                                        {boatStatusLabel[boatstatus] ?? boatstatus}
+                                    </span>
+                                </div>
                             </div>
                         </div>
                     </div>
 
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
-                        <div className="flex items-center text-blue-700">
-                            <svg className="w-5 h-5 mr-2 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    {/* Dates Grid - Mobile Optimized */}
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        <div className="flex items-start gap-2 text-blue-700">
+                            <svg className="w-4 h-4 md:w-5 md:h-5 mt-0.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
                             </svg>
-                            <div className="text-sm">
-                                <p className="font-semibold uppercase">Booking Date</p>
-                                <p className="uppercase">{bookingDate}</p>
+                            <div className="min-w-0">
+                                <p className="text-xs text-gray-500 uppercase tracking-wide font-medium">Booking Date</p>
+                                <p className="text-sm font-medium text-blue-900 truncate">{bookingDate}</p>
                             </div>
                         </div>
-                        <div className="flex items-center text-blue-700">
-                            <svg className="w-5 h-5 mr-2 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <div className="flex items-start gap-2 text-blue-700">
+                            <svg className="w-4 h-4 md:w-5 md:h-5 mt-0.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
                             </svg>
-                            <div className="text-sm">
-                                <p className="font-semibold uppercase">Trip Date</p>
-                                <p className="uppercase">{tripDate}</p>
+                            <div className="min-w-0">
+                                <p className="text-xs text-gray-500 uppercase tracking-wide font-medium">Trip Date</p>
+                                <p className="text-sm font-medium text-blue-900 truncate">{tripDate}</p>
                             </div>
                         </div>
                     </div>
 
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                    {/* Route & Payment Grid - Mobile Optimized */}
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                         <div className="text-blue-700">
-                            <p className="text-sm font-semibold mb-1 uppercase">Route</p>
-                            <p className="text-sm uppercase">{routFrom} → {routTo}</p>
+                            <p className="text-xs text-gray-500 uppercase tracking-wide font-medium mb-1">Route</p>
+                            <p className="text-sm font-medium text-blue-900 truncate">{routFrom} → {routTo}</p>
                         </div>
                         <div className="text-blue-700">
-                            <p className="text-sm font-semibold mb-1 uppercase">Payment Method</p>
-                            <p className="text-sm uppercase">{paymentMethod}</p>
+                            <p className="text-xs text-gray-500 uppercase tracking-wide font-medium mb-1">Payment Method</p>
+                            <p className="text-sm font-medium text-blue-900 truncate">{paymentMethod}</p>
                         </div>
                     </div>
 
-                    <div className="flex items-center justify-between border-t border-blue-100 pt-4">
-                        <div>
+                    {/* Footer: Price + IDs - Mobile Optimized */}
+                    <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 border-t border-blue-100 pt-3">
+                        <div className="min-w-0">
                             <p className="text-xs text-blue-500 uppercase tracking-wide mb-1">Total Price</p>
-                            <p className="text-2xl font-bold text-blue-900">₱{totalPrice}</p>
+                            <p className="text-xl md:text-2xl font-bold text-blue-900">₱{totalPrice}</p>
                         </div>
-                        <div className="flex gap-2 text-xs text-gray-500 uppercase">
-                            <span>Boat ID: {boatId}</span>
-                            <span>|</span>
-                            <span>Operator ID: {operatorId}</span>
+                        <div className="flex flex-col sm:flex-row gap-2 text-xs text-gray-500 uppercase flex-shrink-0">
+                            <span className="truncate">Boat ID: {boatId}</span>
+                            <span className="hidden sm:inline">|</span>
+                            <span className="truncate">Operator ID: {operatorId}</span>
                         </div>
                     </div>
                 </div>
