@@ -78,6 +78,15 @@ export default function BoatOperatorEditPage() {
     setForm((prev) => ({ ...prev, [e.target.id]: e.target.value }))
   }
 
+  const handleNumberChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const { name, value } = e.target
+    let num = value.replace(/\s+/g, "")
+    if (num.startsWith("09")) num = "+63" + num.slice(1)
+    else if (num.startsWith("639")) num = "+" + num
+    if (!/^\+?\d*$/.test(num)) return
+    setForm((prev) => ({ ...prev, [name]: num }))
+  }
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     setError(null)
@@ -219,10 +228,11 @@ export default function BoatOperatorEditPage() {
                 Phone Number
               </label>
               <input
+                name="phone_number"
                 id="phone_number"
                 type="tel"
                 value={form.phone_number}
-                onChange={handleChange}
+                onChange={handleNumberChange}
                 placeholder="+639171234567"
                 className="w-full h-11 px-4 rounded-lg border-2 border-gray-200 bg-gray-50 text-gray-900 placeholder:text-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
               />

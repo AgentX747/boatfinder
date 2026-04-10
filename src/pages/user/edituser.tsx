@@ -125,6 +125,14 @@ export default function UserEditPage() {
     console.error("Failed to update user details", err)
   }
 }
+  const handleNumberChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const { name, value } = e.target
+    let num = value.replace(/\s+/g, "")
+    if (num.startsWith("09")) num = "+63" + num.slice(1)
+    else if (num.startsWith("639")) num = "+" + num
+    if (!/^\+?\d*$/.test(num)) return
+    setCurrentUser((prev) => ({ ...prev, [name]: num }))
+  }
   return (
     <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4">
       <div className="w-full max-w-2xl bg-white rounded-xl shadow-2xl border-2 border-gray-200 overflow-hidden">
@@ -213,10 +221,11 @@ export default function UserEditPage() {
                 Phone Number
               </label>
               <input
+                name="phone_number"
                 id="phone_number"
                 type="tel"
                 value={currentUser.phone_number}
-                onChange={handleChange}
+                onChange={handleNumberChange}
                 placeholder="+639171234567"
                 className="w-full h-11 px-4 rounded-lg border-2 border-gray-200 bg-gray-50 text-gray-900 placeholder:text-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
               />
