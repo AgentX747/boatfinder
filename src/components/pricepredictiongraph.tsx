@@ -439,8 +439,8 @@ export default function PricePredictionGraph() {
             </BarChart>
           </ResponsiveContainer>
 
-          <ResponsiveContainer width="100%" height={400}>
-            <ComposedChart data={national} margin={{ top: 10, right: 20, left: 10, bottom: 30 }}>
+          <ResponsiveContainer width="100%" height={300}>
+            <ComposedChart data={national} margin={{ top: 10, right: 10, left: 0, bottom: 25 }}>
               <defs>
                 <linearGradient id="gHist" x1="0" y1="0" x2="0" y2="1">
                   <stop offset="5%"  stopColor="#3b82f6" stopOpacity={0.25} />
@@ -544,8 +544,8 @@ export default function PricePredictionGraph() {
               </div>
             ))}
           </div>
-          <ResponsiveContainer width="100%" height={340}>
-            <BarChart data={yearlyData} barCategoryGap="20%">
+          <ResponsiveContainer width="100%" height={280}>
+            <BarChart data={yearlyData} barCategoryGap="20%" margin={{ top: 5, right: 10, left: 0, bottom: 25 }}>
               <CartesianGrid strokeDasharray="3 3" stroke="#e0f2fe" vertical={false} />
               <XAxis dataKey="year" tick={{ fill: "#0369a1", fontSize: 11 }} />
               <YAxis tickFormatter={v => `${(v / 1_000_000).toFixed(0)}M`} tick={{ fill: "#0369a1", fontSize: 10 }} />
@@ -587,8 +587,8 @@ export default function PricePredictionGraph() {
           </div>
 
           {/* ── Seasonal line chart ── */}
-          <ResponsiveContainer width="100%" height={300}>
-            <LineChart data={seasonal.data} margin={{ top: 10, right: 20, left: 10, bottom: 0 }}>
+          <ResponsiveContainer width="100%" height={250}>
+            <LineChart data={seasonal.data} margin={{ top: 10, right: 10, left: 0, bottom: 20 }}>
               <CartesianGrid strokeDasharray="3 3" stroke="#e0f2fe" />
               <XAxis dataKey="month" tick={{ fill: "#0369a1", fontSize: 12, fontWeight: 600 }} />
               <YAxis tickFormatter={fmtM} tick={{ fill: "#0369a1", fontSize: 10 }} />
@@ -725,9 +725,9 @@ export default function PricePredictionGraph() {
               );
             })}
           </div>
-          <p style={{ ...S.chartMeta, marginTop: 28 }}>Projected 2026 Annual Passengers by Scenario</p>
-          <ResponsiveContainer width="100%" height={220}>
-            <BarChart data={scenarios.rows} layout="vertical" barSize={32} margin={{ left: 20, right: 60 }}>
+          <p style={{ ...S.chartMeta, marginTop: 16 }}>Projected 2026 Annual Passengers by Scenario</p>
+          <ResponsiveContainer width="100%" height={200}>
+            <BarChart data={scenarios.rows} layout="vertical" barSize={28} margin={{ left: 80, right: 40, top: 5, bottom: 5 }}>
               <CartesianGrid strokeDasharray="3 3" stroke="#e0f2fe" horizontal={false} />
               <XAxis type="number" domain={[70, 95]} tickFormatter={v => `${v}M`} tick={{ fill: "#0369a1", fontSize: 10 }} />
               <YAxis dataKey="scenario" type="category" width={100}
@@ -761,18 +761,18 @@ export default function PricePredictionGraph() {
 
 function KPI({ label, value, color }: { label: string; value: string; color: string }) {
   return (
-    <div style={{ textAlign: "right" }}>
-      <p style={{ fontSize: 10, color: "#e0f2fe", letterSpacing: 2, margin: "0 0 4px", fontWeight: 600 }}>{label}</p>
-      <p style={{ fontSize: 24, fontWeight: 800, color: "#ffffff", margin: 0, fontVariantNumeric: "tabular-nums" }}>{value}</p>
+    <div style={{ textAlign: "left" }}>
+      <p style={{ fontSize: 9, color: "#e0f2fe", letterSpacing: 1.5, margin: "0 0 3px", fontWeight: 600 }}>{label}</p>
+      <p style={{ fontSize: 16, fontWeight: 800, color: "#ffffff", margin: 0, fontVariantNumeric: "tabular-nums" }}>{value}</p>
     </div>
   );
 }
 
 function SectionTitle({ title, sub }: { title: string; sub: string }) {
   return (
-    <div style={{ marginBottom: 24 }}>
-      <h2 style={{ fontSize: 18, fontWeight: 800, color: "#0c4a6e", margin: "0 0 6px" }}>{title}</h2>
-      <p style={{ fontSize: 12, color: "#0369a1", margin: 0, lineHeight: 1.6 }}>{sub}</p>
+    <div style={{ marginBottom: 16 }}>
+      <h2 style={{ fontSize: 16, fontWeight: 800, color: "#0c4a6e", margin: "0 0 4px" }}>{title}</h2>
+      <p style={{ fontSize: 11, color: "#0369a1", margin: 0, lineHeight: 1.5 }}>{sub}</p>
     </div>
   );
 }
@@ -780,21 +780,21 @@ function SectionTitle({ title, sub }: { title: string; sub: string }) {
 function InsightCard({ icon, title, body }: { icon: string; title: string; body: string }) {
   return (
     <div style={S.insightCard}>
-      <p style={{ fontSize: 22, margin: "0 0 10px" }}>{icon}</p>
-      <p style={{ fontSize: 14, fontWeight: 800, color: "#0c4a6e", margin: "0 0 8px" }}>{title}</p>
-      <p style={{ fontSize: 12, color: "#0369a1", margin: 0, lineHeight: 1.7 }}>{body}</p>
+      <p style={{ fontSize: 18, margin: "0 0 8px" }}>{icon}</p>
+      <p style={{ fontSize: 13, fontWeight: 800, color: "#0c4a6e", margin: "0 0 6px" }}>{title}</p>
+      <p style={{ fontSize: 11, color: "#0369a1", margin: 0, lineHeight: 1.5 }}>{body}</p>
     </div>
   );
 }
 
 function Callout({ icon, label, value, sub, color }: { icon: string; label: string; value: string; sub: string; color: string }) {
   return (
-    <div style={{ ...S.calloutCard, borderColor: color + "33" }}>
-      <span style={{ fontSize: 28 }}>{icon}</span>
-      <div>
-        <p style={{ fontSize: 10, color: "#0c4a6e", letterSpacing: 2, margin: "0 0 4px", fontWeight: 700 }}>{label}</p>
-        <p style={{ fontSize: 20, fontWeight: 800, color, margin: "0 0 4px" }}>{value}</p>
-        <p style={{ fontSize: 12, color: "#0369a1", margin: 0 }}>{sub}</p>
+    <div style={{ ...S.calloutCard, borderColor: color + "33", border: `1px solid ${color}33` }}>
+      <span style={{ fontSize: 24 }}>{icon}</span>
+      <div style={{ width: "100%" }}>
+        <p style={{ fontSize: 9, color: "#0c4a6e", letterSpacing: 1.5, margin: "0 0 3px", fontWeight: 700 }}>{label}</p>
+        <p style={{ fontSize: 16, fontWeight: 800, color, margin: "0 0 3px" }}>{value}</p>
+        <p style={{ fontSize: 11, color: "#0369a1", margin: 0 }}>{sub}</p>
       </div>
     </div>
   );
@@ -806,7 +806,11 @@ const S = {
   shell: {
     fontFamily: "'Inter', '-apple-system', 'BlinkMacSystemFont', 'Segoe UI', sans-serif",
     background: "linear-gradient(135deg, #f0f5ff 0%, #e8f1ff 100%)",
-    minHeight: "100vh", padding: "28px 24px", color: "#0c4a6e",
+    minHeight: "100vh", 
+    padding: "16px 12px", 
+    "@media (min-width: 768px)": { padding: "28px 24px" },
+    color: "#0c4a6e",
+    overflowX: "hidden" as const,
   } as React.CSSProperties,
   center: {
     display: "flex", flexDirection: "column" as const,
@@ -818,89 +822,118 @@ const S = {
     animation: "spin 0.9s linear infinite",
   } as React.CSSProperties,
   header: {
-    display: "flex", justifyContent: "space-between", alignItems: "flex-start",
-    marginBottom: 28, flexWrap: "wrap" as const, gap: 16,
+    display: "flex", 
+    flexDirection: "column" as const,
+    justifyContent: "space-between", 
+    alignItems: "flex-start",
+    marginBottom: 20, 
+    gap: 16,
     background: "linear-gradient(135deg, #0c4a6e 0%, #0369a1 100%)",
-    padding: "32px", borderRadius: "16px",
+    padding: "20px 16px", 
+    borderRadius: "16px",
     boxShadow: "0 10px 40px rgba(6, 105, 161, 0.15)",
   } as React.CSSProperties,
-  eyebrow:  { fontSize: 10, letterSpacing: 3, color: "#e0f2fe", fontWeight: 700, margin: "0 0 8px" } as React.CSSProperties,
-  title:    { fontSize: 36, fontWeight: 800, margin: "0 0 8px", color: "#ffffff", letterSpacing: -0.5 } as React.CSSProperties,
-  subtitle: { fontSize: 13, color: "#cffafe", margin: 0 } as React.CSSProperties,
-  kpiRow:   { display: "flex", gap: 28, alignItems: "flex-end" } as React.CSSProperties,
-  tabBar:   { display: "flex", gap: 8, marginBottom: 24, borderBottom: "1px solid #bfdbfe", paddingBottom: 12 } as React.CSSProperties,
+  eyebrow:  { fontSize: 9, letterSpacing: 2, color: "#e0f2fe", fontWeight: 700, margin: "0 0 6px" } as React.CSSProperties,
+  title:    { fontSize: 20, fontWeight: 800, margin: "0 0 6px", color: "#ffffff", letterSpacing: -0.5 } as React.CSSProperties,
+  subtitle: { fontSize: 11, color: "#cffafe", margin: 0 } as React.CSSProperties,
+  kpiRow:   { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))", gap: 12, width: "100%" } as React.CSSProperties,
+  tabBar:   { display: "flex", gap: 6, marginBottom: 16, borderBottom: "1px solid #bfdbfe", paddingBottom: 10, overflowX: "auto" as const, scrollBehavior: "smooth" as const } as React.CSSProperties,
   tab: (active: boolean) => ({
-    background: active ? "#0369a1" : "#ffffff", border: "none",
-    color: active ? "#ffffff" : "#0c4a6e", fontWeight: 700, fontSize: 13,
-    padding: "10px 18px", cursor: "pointer", borderRadius: "8px",
+    background: active ? "#0369a1" : "#ffffff", 
+    border: "none",
+    color: active ? "#ffffff" : "#0c4a6e", 
+    fontWeight: 700, 
+    fontSize: "11px",
+    padding: "8px 12px", 
+    cursor: "pointer", 
+    borderRadius: "8px",
     fontFamily: "inherit",
+    whiteSpace: "nowrap" as const,
+    flexShrink: 0,
     boxShadow: active ? "0 4px 12px rgba(6,105,161,0.25)" : "0 2px 4px rgba(0,0,0,0.05)",
     transition: "all 0.3s ease",
   } as React.CSSProperties),
   panel: {
-    background: "#ffffff", borderRadius: "16px", padding: "28px",
-    border: "1px solid #bfdbfe", boxShadow: "0 4px 12px rgba(0,0,0,0.05)",
+    background: "#ffffff", 
+    borderRadius: "16px", 
+    padding: "16px 12px", 
+    border: "1px solid #bfdbfe", 
+    boxShadow: "0 4px 12px rgba(0,0,0,0.05)",
   } as React.CSSProperties,
   shockBanner: {
-    display: "flex", gap: 12, alignItems: "flex-start",
+    display: "flex", gap: 10, alignItems: "flex-start",
     background: "#fee2e2", border: "1px solid #fca5a5",
-    borderRadius: 12, padding: "16px", marginBottom: 24,
+    borderRadius: 12, padding: "12px", marginBottom: 16,
+    fontSize: "13px",
   } as React.CSSProperties,
   contextNote: {
-    display: "flex", gap: 12, alignItems: "flex-start",
+    display: "flex", gap: 10, alignItems: "flex-start",
     background: "#dbeafe", border: "1px solid #93c5fd",
-    borderRadius: 12, padding: "16px", marginBottom: 24,
+    borderRadius: 12, padding: "12px", marginBottom: 16,
+    fontSize: "13px",
   } as React.CSSProperties,
-  chartMeta:   { fontSize: 12, color: "#0c4a6e", margin: "0 0 12px", fontWeight: 700 } as React.CSSProperties,
-  note:        { fontSize: 12, color: "#64748b", textAlign: "center" as const, margin: "12px 0 20px", fontWeight: 500 } as React.CSSProperties,
-  dateCallouts:{ display: "flex", gap: 12, marginTop: 20, flexWrap: "wrap" as const } as React.CSSProperties,
+  chartMeta:   { fontSize: 11, color: "#0c4a6e", margin: "0 0 10px", fontWeight: 700 } as React.CSSProperties,
+  note:        { fontSize: 11, color: "#64748b", textAlign: "center" as const, margin: "10px 0 16px", fontWeight: 500 } as React.CSSProperties,
+  dateCallouts:{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(110px, 1fr))", gap: 10, marginTop: 16 } as React.CSSProperties,
   dateChip: {
-    flex: 1, minWidth: 130, background: "#f0f9ff", borderRadius: 10,
+    background: "#f0f9ff", borderRadius: 10,
+    padding: "10px 8px", border: "1px solid #bfdbfe", textAlign: "center" as const,
+  } as React.CSSProperties,
+  yearCallouts:{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(110px, 1fr))", gap: 10, marginBottom: 16 } as React.CSSProperties,
+  yearCard: {
+    background: "#f0f9ff", borderRadius: 12,
     padding: "12px", border: "1px solid #bfdbfe", textAlign: "center" as const,
   } as React.CSSProperties,
-  yearCallouts:{ display: "flex", gap: 12, marginBottom: 24, flexWrap: "wrap" as const } as React.CSSProperties,
-  yearCard: {
-    flex: 1, minWidth: 140, background: "#f0f9ff", borderRadius: 12,
-    padding: "16px", border: "1px solid #bfdbfe", textAlign: "center" as const,
-  } as React.CSSProperties,
   insightGrid: {
-    display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: 16, marginTop: 24,
+    display: "grid", 
+    gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))", 
+    gap: 12, 
+    marginTop: 16,
   } as React.CSSProperties,
-  insightCard: { background: "#f0f9ff", borderRadius: 12, padding: "16px", border: "1px solid #bfdbfe" } as React.CSSProperties,
-  calloutRow:  { display: "flex", gap: 16, marginBottom: 24, flexWrap: "wrap" as const } as React.CSSProperties,
+  insightCard: { background: "#f0f9ff", borderRadius: 12, padding: "12px", border: "1px solid #bfdbfe" } as React.CSSProperties,
+  calloutRow:  { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 12, marginBottom: 16 } as React.CSSProperties,
   calloutCard: {
-    display: "flex", gap: 12, alignItems: "center", background: "#f0f9ff",
-    borderRadius: 12, padding: "16px", border: "1px solid #bfdbfe", flex: 1, minWidth: 200,
+    display: "flex", 
+    flexDirection: "column" as const,
+    gap: 10, 
+    alignItems: "flex-start", 
+    background: "#f0f9ff",
+    borderRadius: 12, 
+    padding: "12px", 
+    border: "1px solid #bfdbfe", 
   } as React.CSSProperties,
   // ── Seasonal table ──
-  seasonTable: { border: "1px solid #bfdbfe", borderRadius: 10, overflow: "hidden", marginBottom: 8 } as React.CSSProperties,
-  seasonRow:   { display: "grid", gridTemplateColumns: "1fr 1.2fr 1.2fr 1fr", padding: "10px 16px", borderBottom: "1px solid #e0f2fe" } as React.CSSProperties,
-  seasonCell:  { fontSize: 12, color: "#0c4a6e" } as React.CSSProperties,
+  seasonTable: { border: "1px solid #bfdbfe", borderRadius: 10, overflow: "hidden", marginBottom: 8, overflowX: "auto" as const } as React.CSSProperties,
+  seasonRow:   { display: "grid", gridTemplateColumns: "minmax(60px, 1fr) minmax(80px, 1.2fr) minmax(80px, 1.2fr) minmax(70px, 1fr)", padding: "8px 12px", borderBottom: "1px solid #e0f2fe", minWidth: "100%" } as React.CSSProperties,
+  seasonCell:  { fontSize: 11, color: "#0c4a6e" } as React.CSSProperties,
   // ── Month shape cards ──
-  monthGrid:   { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(80px, 1fr))", gap: 10, marginTop: 10 } as React.CSSProperties,
-  monthCard:   { borderRadius: 8, padding: "10px 6px", textAlign: "center" as const, border: "1px solid #bfdbfe" } as React.CSSProperties,
-  monthName:   { fontSize: 11, color: "#0c4a6e", fontWeight: 700, margin: "0 0 4px" } as React.CSSProperties,
-  monthVal:    { fontSize: 13, fontWeight: 800, margin: "0 0 2px" } as React.CSSProperties,
-  monthPct:    { fontSize: 11, fontWeight: 700, margin: 0 } as React.CSSProperties,
+  monthGrid:   { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(70px, 1fr))", gap: 8, marginTop: 10 } as React.CSSProperties,
+  monthCard:   { borderRadius: 8, padding: "8px 4px", textAlign: "center" as const, border: "1px solid #bfdbfe" } as React.CSSProperties,
+  monthName:   { fontSize: 10, color: "#0c4a6e", fontWeight: 700, margin: "0 0 3px" } as React.CSSProperties,
+  monthVal:    { fontSize: 12, fontWeight: 800, margin: "0 0 2px" } as React.CSSProperties,
+  monthPct:    { fontSize: 10, fontWeight: 700, margin: 0 } as React.CSSProperties,
   // ── Scenarios ──
-  scenarioGrid:{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: 16, marginBottom: 24 } as React.CSSProperties,
-  scenCard:    { background: "#f0f9ff", borderRadius: 12, padding: "20px", border: "1px solid #bfdbfe" } as React.CSSProperties,
+  scenarioGrid:{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 12, marginBottom: 16 } as React.CSSProperties,
+  scenCard:    { background: "#f0f9ff", borderRadius: 12, padding: "14px", border: "1px solid #bfdbfe" } as React.CSSProperties,
   pill:        { fontSize: 11, fontWeight: 700, borderRadius: 20, padding: "4px 10px" } as React.CSSProperties,
   // ── Feature importance ──
-  featureGrid: { display: "flex", flexDirection: "column" as const, gap: 8, marginTop: 12 } as React.CSSProperties,
+  featureGrid: { display: "flex", flexDirection: "column" as const, gap: 8, marginTop: 10 } as React.CSSProperties,
   featureRow:  {
-    display: "flex", alignItems: "center", gap: 10, padding: "10px 12px",
+    display: "flex", alignItems: "center", gap: 8, padding: "8px 10px",
     background: "#f0f9ff", borderRadius: 8, border: "1px solid #bfdbfe",
+    fontSize: "12px",
   } as React.CSSProperties,
-  featureDot:    { width: 8, height: 8, borderRadius: "50%", flexShrink: 0 } as React.CSSProperties,
-  featureBarBg:  { flex: 1, height: 6, background: "#e0f2fe", borderRadius: 3, overflow: "hidden" } as React.CSSProperties,
+  featureDot:    { width: 6, height: 6, borderRadius: "50%", flexShrink: 0 } as React.CSSProperties,
+  featureBarBg:  { flex: 1, height: 5, background: "#e0f2fe", borderRadius: 3, overflow: "hidden", minWidth: "40px" } as React.CSSProperties,
   featureBarFill:{ height: "100%", borderRadius: 3, transition: "width 0.3s" } as React.CSSProperties,
   tooltip: {
     background: "#ffffff", border: "1px solid #bfdbfe", borderRadius: 12,
-    padding: "14px", fontSize: 12, color: "#0c4a6e",
+    padding: "10px 12px", fontSize: 11, color: "#0c4a6e",
     boxShadow: "0 10px 30px rgba(6, 105, 161, 0.12)",
+    maxWidth: "200px",
   } as React.CSSProperties,
   tt: {
-    background: "#ffffff", border: "1px solid #bfdbfe", borderRadius: 12, fontSize: 11, color: "#0c4a6e",
+    background: "#ffffff", border: "1px solid #bfdbfe", borderRadius: 12, fontSize: 10, color: "#0c4a6e",
+    maxWidth: "180px",
   } as React.CSSProperties,
 };
