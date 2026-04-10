@@ -684,7 +684,7 @@ export async function confirmDeleteBoat(
 export async function boatOperatorCurrentDetails(operatorId: number) {
   return withCache(`operator:profile:${operatorId}`, PROFILE_TTL, async () => {
     const [result] = await connection.execute(
-      `SELECT firstName, lastName, userName, email, password,
+      `SELECT firstName, lastName, userName, email, password,operator_id,
               phone_number, address, gender, birthdate
        FROM boatoperators WHERE operator_id = ?`,
       [operatorId]

@@ -4,6 +4,7 @@ import { apiFetch } from '../../utils/apifetch'
 import { useNavigate, useParams } from 'react-router-dom'
 
 interface OperatorDetails {
+  operator_id?: number
   firstName: string
   lastName: string
   userName: string
@@ -27,6 +28,7 @@ export default function BoatOperatorEditPage() {
     gender: '',
     birthdate: '',
   })
+  const [operatorId, setOperatorId] = useState<number | undefined>(undefined)
   const [password, setPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
   const [loading, setLoading] = useState(true)
@@ -50,6 +52,7 @@ export default function BoatOperatorEditPage() {
         const details = await detailsRes.json()
         const data: OperatorDetails = Array.isArray(details) ? details[0] : details
 
+        setOperatorId(data.operator_id)
         setForm({
           firstName: data.firstName ?? '',
           lastName: data.lastName ?? '',
@@ -131,6 +134,12 @@ export default function BoatOperatorEditPage() {
 
         {/* Form */}
         <div className="px-8 py-8">
+          {/* Operator ID Display */}
+          <div className="mb-8 pb-6 border-b-2 border-gray-200">
+            <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Operator ID</p>
+            <p className="text-3xl font-bold text-blue-600">{operatorId}</p>
+          </div>
+
           {error && (
             <div className="mb-4 p-3 rounded-lg bg-red-50 border border-red-200 text-red-600 text-sm">
               {error}
