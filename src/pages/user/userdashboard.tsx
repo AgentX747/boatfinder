@@ -542,6 +542,57 @@ async function submitRefund() {
      case "viewboats":
   return (
     <>
+     <div className="relative w-full overflow-hidden bg-gradient-to-r from-blue-600 to-blue-700 py-12 sm:py-16 md:py-20">
+      {/* Animated Wave Background */}
+      <svg
+        className="absolute inset-0 w-full h-full"
+        viewBox="0 0 1200 120"
+        preserveAspectRatio="none"
+        style={{ opacity: 0.1 }}
+      >
+        <defs>
+          <style>{`
+            @keyframes wave1 {
+              0% { transform: translateX(0); }
+              100% { transform: translateX(1200px); }
+            }
+            @keyframes wave2 {
+              0% { transform: translateX(-1200px); }
+              100% { transform: translateX(0); }
+            }
+            .wave1 { animation: wave1 15s linear infinite; }
+            .wave2 { animation: wave2 10s linear infinite; }
+          `}</style>
+        </defs>
+        <path
+          className="wave1"
+          d="M0,60 Q300,30 600,60 T1200,60 L1200,120 L0,120 Z"
+          fill="white"
+        />
+        <path
+          className="wave2"
+          d="M0,70 Q300,40 600,70 T1200,70 L1200,120 L0,120 Z"
+          fill="white"
+        />
+      </svg>
+
+      {/* Subtle Anchor Icons */}
+      <div className="absolute top-4 right-8 opacity-10 text-white text-4xl sm:text-5xl">⚓</div>
+      <div className="absolute bottom-4 left-8 opacity-10 text-white text-3xl sm:text-4xl">⚓</div>
+
+      {/* Content */}
+      <div className="relative z-10 px-4 sm:px-8 md:px-12 flex flex-col justify-center">
+        <h2 className="text-3xl sm:text-4xl md:text-5xl font-bold text-white mb-3 tracking-tight">
+          Most Recommended Boats
+        </h2>
+        <p className="text-base sm:text-lg text-blue-100 max-w-2xl">
+          Here are the most recommended boats for your liking
+        </p>
+      </div>
+
+      {/* Decorative Line */}
+      <div className="absolute bottom-0 left-0 right-0 h-1 bg-gradient-to-r from-transparent via-blue-300 to-transparent opacity-30"></div>
+    </div>
       {/* hero section unchanged ... */}
       <div className="flex flex-row flex-wrap gap-4 sm:gap-5 p-4 sm:p-8" style={{ background: '#f0f6ff' }}>
         {boatsLoading ? (
