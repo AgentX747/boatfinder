@@ -869,9 +869,10 @@ const S = {
     fontFamily: "'Inter', '-apple-system', 'BlinkMacSystemFont', 'Segoe UI', sans-serif",
     background: "linear-gradient(135deg, #f0f5ff 0%, #e8f1ff 100%)",
     minHeight: "100vh", 
-    padding: "16px 12px", 
-    "@media (min-width: 768px)": { padding: "28px 24px" },
+    padding: "16px 12px",
     color: "#0c4a6e",
+    width: "100%",
+    boxSizing: "border-box" as const,
     overflowX: "hidden" as const,
   } as React.CSSProperties,
   center: {
@@ -921,6 +922,8 @@ const S = {
     padding: "16px 12px", 
     border: "1px solid #bfdbfe", 
     boxShadow: "0 4px 12px rgba(0,0,0,0.05)",
+    width: "100%",
+    boxSizing: "border-box" as const,
   } as React.CSSProperties,
   shockBanner: {
     display: "flex", gap: 10, alignItems: "flex-start",
