@@ -38,9 +38,14 @@ export async function getAllBoatsController(req: Request, res: Response) {
   }
 }
 export async function getRecommendedBoatsController(req: Request, res: Response) {
-  const { userId } = req.params;
-  const boats = await userService.getRecommendedBoats(String(userId));
-  res.json(boats);
+  try {
+    const { userId } = req.params;
+    const boats = await userService.getRecommendedBoats(String(userId));
+    res.json(boats);
+  } catch (err: any) {
+    console.error("getRecommendedBoats error:", err);
+    res.status(500).json({ message: err.message || "Internal server error" });
+  }
 }
 export async function bookBoatdetailsController(req: Request, res: Response) {
   try {

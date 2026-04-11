@@ -69,19 +69,18 @@ export async function getAllBoats() {
   const [rows] = await connection.execute<RowDataPacket[]>(
     `SELECT fk_booking_userId AS user_id, fk_booking_boatId AS boat_id
      FROM bookings
-     WHERE status IN ('completed', 'accepted')`
+     WHERE bookingstatus IN ('completed', 'accepted')`  // ← was 'status', correct column is 'bookingstatus'
   );
- 
+
   const matrix: UserBoatMatrix = {};
- 
+
   for (const row of rows) {
     const uid = String(row.user_id);
     const bid = String(row.boat_id);
- 
     if (!matrix[uid]) matrix[uid] = {};
     matrix[uid][bid] = 1;
   }
- 
+
   return matrix;
 }
  
