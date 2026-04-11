@@ -67,7 +67,7 @@ export async function getAllBoats() {
 }
  async function buildUserBoatMatrix(): Promise<UserBoatMatrix> {
   const [rows] = await connection.execute<RowDataPacket[]>(
-    `SELECT user_id, boat_id
+    `SELECT fk_booking_userId AS user_id, fk_booking_boatId AS boat_id
      FROM bookings
      WHERE status IN ('completed', 'accepted')`
   );

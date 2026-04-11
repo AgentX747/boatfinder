@@ -40,6 +40,8 @@ export default function UserDashboard() {
 
   const [boats, setBoats] = useState<any[]>([])
   const [pendingBookings, setPendingBookings] = useState<any[]>([])
+  const [recommendedBoats, setRecommendedBoats] = useState<any[]>([]) // ← new, used by viewboats tab
+const [boatsLoading, setBoatsLoading] = useState(true)   
   const [bookingHistory, setBookingHistory] = useState<any[]>([])
   const [acceptedBookings, setAcceptedBookings] = useState<any[]>([])
 
@@ -232,20 +234,60 @@ async function submitRefund() {
     } catch (error) { console.error(error); alert("Failed to submit ticket") }
   }
 
-  useEffect(() => {
-    async function fetchSession() {
-      try {
-        const res  = await apiFetch("https://boatfinder.onrender.com/user/usersession", { method: "GET", credentials: "include" })
-        const data = await res.json()
-        setUserLoggedIn({ user_id: data.userId, firstName: data.firstName, lastName: data.lastName })
-        if (res.status === 401 || res.status === 403) { navigate("/login"); return }
-        if (!res.ok) throw new Error("Failed to fetch user session")
-      } catch (err) { console.error("Failed to fetch session", err); navigate("/login") }
+ useEffect(() => {
+  async function fetchAll() {
+    // ── Session first (need userId for recommendations) ──
+    let userId = ""
+    try {
+      const res  = await apiFetch("https://boatfinder.onrender.com/user/usersession", { method: "GET", credentials: "include" })
+      if (res.status === 401 || res.status === 403) { navigate("/login"); return }
+      if (!res.ok) throw new Error("Failed to fetch user session")
+      const data = await res.json()
+      userId = data.userId ?? ""
+      setUserLoggedIn({ user_id: userId, firstName: data.firstName, lastName: data.lastName })
+    } catch (err) {
+      console.error("Failed to fetch session", err)
+      navigate("/login")
+      return
     }
+
+    // ── All other fetches in parallel ──
     async function getallBoats() {
-      const res = await apiFetch("https://boatfinder.onrender.com/user/getallboats", { method: "GET", credentials: "include" })
-      setBoats(await res.json())
+      try {
+        const res = await apiFetch("https://boatfinder.onrender.com/user/getallboats", { method: "GET", credentials: "include" })
+        setBoats(await res.json())
+      } catch (err) { console.error("Failed to fetch all boats", err) }
     }
+
+    async function getRecommendedBoats() {
+      setBoatsLoading(true)
+      try {
+        const res  = await apiFetch(`https://boatfinder.onrender.com/user/recommendations/${userId}`, { method: "GET", credentials: "include" })
+        if (!res.ok) throw new Error("Failed to fetch recommendations")
+        const data = await res.json()
+        setRecommendedBoats(
+          Array.isArray(data)
+            ? data.map((boat: any) => ({
+                ...boat,
+                boatId:       boat.boatId      ?? boat.boat_id,
+                boatName:     boat.boatName     ?? boat.boat_name,
+                vesselType:   boat.vesselType   ?? boat.vessel_type,
+                capacity:     boat.capacity     ?? boat.capacity_information,
+                ticketPrice:  boat.ticketPrice  ?? boat.ticket_price,
+                routeFrom:    boat.routeFrom    ?? boat.route_from,
+                routeTo:      boat.routeTo      ?? boat.route_to,
+                operatorName: boat.operatorName ?? boat.operator_name,
+              }))
+            : []
+        )
+      } catch (err) {
+        console.error("Failed to fetch recommendations", err)
+        setRecommendedBoats([])
+      } finally {
+        setBoatsLoading(false)
+      }
+    }
+
     async function getPendingBookings() {
       try {
         const res = await apiFetch("https://boatfinder.onrender.com/user/getpendingbookings", { method: "GET", credentials: "include" })
@@ -280,9 +322,20 @@ async function submitRefund() {
         setRefundTickets(Array.isArray(data) ? data : [])
       } catch (err) { console.error("Failed to fetch refund tickets", err); setRefundTickets([]) }
     }
-    fetchSession(); getHistoryBookings(); getAcceptedBookings()
-    getallBoats();  getPendingBookings(); fetchSupportTickets(); fetchRefundTickets()
-  }, [])
+
+    await Promise.all([
+      getallBoats(),
+      getRecommendedBoats(),
+      getPendingBookings(),
+      getAcceptedBookings(),
+      getHistoryBookings(),
+      fetchSupportTickets(),
+      fetchRefundTickets(),
+    ])
+  }
+
+  fetchAll()
+}, [])
 
   function renderActiveTab() {
     switch (activeTab) {
@@ -486,37 +539,31 @@ async function submitRefund() {
           </main>
         )
 
-      case "viewboats":
-        return (
-          <>
-            <div className="relative overflow-hidden flex flex-col" style={{ background: 'linear-gradient(135deg, #0277bd 0%, #01579b 100%)', minHeight: '280px' }}>
-              <div className="absolute inset-0 pointer-events-none" style={{ background: `radial-gradient(circle at 15% 80%, rgba(255,255,255,0.1) 0%, transparent 50%), radial-gradient(circle at 85% 15%, rgba(255,255,255,0.1) 0%, transparent 50%)` }} />
-              <div className="absolute top-0 right-0 h-full w-5/12 pointer-events-none" style={{ background: 'linear-gradient(135deg, rgba(255,255,255,0.04) 0%, rgba(255,255,255,0.09) 100%)', borderLeft: '1px solid rgba(255,255,255,0.06)' }} />
-              <div className="relative z-10 max-w-7xl mx-auto px-4 sm:px-10 lg:px-14 pt-8 sm:pt-14 pb-0 w-full">
-                <div className="max-w-xl">
-                  <div className="flex items-center gap-2 mb-4 sm:mb-5">
-                    <div className="w-6 h-0.5 rounded-full bg-white/35" />
-                    <span className="text-[11px] font-semibold uppercase tracking-[0.08em] text-white/65">Maritime Fleet</span>
-                  </div>
-                  <h1 className="text-3xl sm:text-5xl md:text-6xl font-bold text-white leading-[1.1] mb-4" style={{ textShadow: '1px 1px 2px rgba(0,0,0,0.15)' }}>
-                    Explore Our Boats<br />&amp; <span className="font-normal italic text-white/75">Start Travelling</span>
-                  </h1>
-                  <p className="text-[14px] sm:text-[15px] leading-relaxed text-white/70 max-w-md mb-6 sm:mb-8">Discover our premium fleet designed for unforgettable maritime adventures.</p>
-                </div>
-              </div>
-              <div className="relative mt-auto h-16 sm:h-20 overflow-hidden">
-                <div className="absolute bottom-0 left-0 h-full" style={{ width: '200%', backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 1200 120'%3E%3Cpath d='M0,50 Q300,10 600,50 T1200,50 L1200,120 L0,120 Z' fill='%23f0f6ff' fill-opacity='1'/%3E%3C/svg%3E")`, backgroundSize: '50% 100%', animation: 'wave 4s linear infinite' }} />
-                <div className="absolute bottom-0 left-0 h-full" style={{ width: '200%', backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 1200 120'%3E%3Cpath d='M0,70 Q300,30 600,70 T1200,70 L1200,120 L0,120 Z' fill='%23e3f2fd' fill-opacity='0.6'/%3E%3C/svg%3E")`, backgroundSize: '50% 100%', animation: 'wave 6s linear infinite reverse' }} />
-              </div>
-            </div>
-            <div className="flex flex-row flex-wrap gap-4 sm:gap-5 p-4 sm:p-8" style={{ background: '#f0f6ff' }}>
-              {boats.map(boat => (
-                <ViewBoatsCard key={boat.boatId || boat.boat_id} img={boat.image} boatName={boat.boatName || boat.boat_name} vesselType={boat.vesselType || boat.vessel_type} capacity={boat.capacity || boat.capacity_information} ticketPrice={boat.ticketPrice || boat.ticket_price} operatorName={boat.operatorName || boat.operator_name} />
-              ))}
-            </div>
-          </>
-        )
-
+     case "viewboats":
+  return (
+    <>
+      {/* hero section unchanged ... */}
+      <div className="flex flex-row flex-wrap gap-4 sm:gap-5 p-4 sm:p-8" style={{ background: '#f0f6ff' }}>
+        {boatsLoading ? (
+          <p className="text-sm text-gray-400 w-full text-center py-10">Loading recommended boats…</p>
+        ) : recommendedBoats.length === 0 ? (
+          <p className="text-sm text-gray-400 w-full text-center py-10">No boats available right now.</p>
+        ) : (
+          recommendedBoats.map(boat => (
+            <ViewBoatsCard
+              key={boat.boatId || boat.boat_id}
+              img={boat.image}
+              boatName={boat.boatName     || boat.boat_name}
+              vesselType={boat.vesselType  || boat.vessel_type}
+              capacity={boat.capacity      || boat.capacity_information}
+              ticketPrice={boat.ticketPrice || boat.ticket_price}
+              operatorName={boat.operatorName || boat.operator_name}
+            />
+          ))
+        )}
+      </div>
+    </>
+  )
       case "weather":
         return (
           <div className="min-h-screen bg-gradient-to-br from-blue-50 to-slate-100">
