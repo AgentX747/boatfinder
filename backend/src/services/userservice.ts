@@ -8,7 +8,21 @@ import { withCache, invalidateCache } from '../utils/cache.js';
 const PROFILE_TTL = 300;
 const HISTORY_TTL = 120;
 const BOATS_TTL   = 300;
-
+type UserBoatMatrix = Record<string, Record<string, number>>;
+ 
+interface BoatRow extends RowDataPacket {
+  boat_id: string;
+  boat_name: string;
+  vessel_type: string;
+  image: string;
+  capacity_information: string;
+  route_from: string;
+  route_to: string;
+  schedules: string | object[];
+  ticket_price: number;
+  operatorName: string;
+  bookingCount?: number; // populated by getPopularBoats
+}
 // ─── Logger Helper ──────────────────────────────────────────────────────────
 async function insertLog(
   action_type: string,
@@ -28,10 +42,11 @@ async function insertLog(
 }
 
 // ─── Read-only (no logs needed) ─────────────────────────────────────────────
+let matrix = {}
 
 export async function getAllBoats() {
   return withCache('boats:all', BOATS_TTL, async () => {
-    const [boats] = await connection.execute<RowDataPacket[]>(
+    const [boats] = await connection.execute<BoatRow[]>(
       `SELECT b.boat_id, b.boat_name, b.vessel_type, b.image,
               b.capacity_information, b.route_from, b.route_to,
               b.schedules, b.ticket_price,
@@ -40,13 +55,144 @@ export async function getAllBoats() {
        INNER JOIN boatoperators bo ON b.operator_id = bo.operator_id
        WHERE b.registration_status = 'verified' AND b.status = 'active'`
     );
-    return (boats as RowDataPacket[]).map((boat) => ({
+ 
+    return boats.map((boat) => ({
       ...boat,
-      schedules: typeof boat.schedules === 'string'
-        ? JSON.parse(boat.schedules)
-        : boat.schedules ?? [],
+      schedules:
+        typeof boat.schedules === 'string'
+          ? JSON.parse(boat.schedules)
+          : (boat.schedules ?? []),
     }));
   });
+}
+ async function buildUserBoatMatrix(): Promise<UserBoatMatrix> {
+  const [rows] = await connection.execute<RowDataPacket[]>(
+    `SELECT user_id, boat_id
+     FROM bookings
+     WHERE status IN ('completed', 'accepted')`
+  );
+ 
+  const matrix: UserBoatMatrix = {};
+ 
+  for (const row of rows) {
+    const uid = String(row.user_id);
+    const bid = String(row.boat_id);
+ 
+    if (!matrix[uid]) matrix[uid] = {};
+    matrix[uid][bid] = 1;
+  }
+ 
+  return matrix;
+}
+ 
+// ─── 3. Cosine similarity between two sparse vectors ─────────────────────────
+ 
+function cosineSimilarity(
+  vecA: Record<string, number>,
+  vecB: Record<string, number>
+): number {
+  let dot = 0;
+  let magA = 0;
+  let magB = 0;
+ 
+  for (const key in vecA) {
+    magA += vecA[key] * vecA[key];
+    if (vecB[key]) dot += vecA[key] * vecB[key];
+  }
+ 
+  for (const key in vecB) {
+    magB += vecB[key] * vecB[key];
+  }
+ 
+  const denom = Math.sqrt(magA) * Math.sqrt(magB);
+  return denom === 0 ? 0 : dot / denom;
+}
+ 
+// ─── 4. Main recommendation function ─────────────────────────────────────────
+//
+//  Strategy:
+//    1. Find other users whose booking history is similar to the current user.
+//    2. Collect boats those similar users have booked that the current user hasn't.
+//    3. Score each candidate boat by the sum of similarity scores of users who booked it.
+//    4. Fall back to popularity (total booking count) when the user has no history.
+ 
+export async function getRecommendedBoats(
+  userId: string,
+  limit = 6
+): Promise<BoatRow[]> {
+  const [matrix, allBoats] = await Promise.all([
+    buildUserBoatMatrix(),
+    getAllBoats(),
+  ]);
+ 
+  const currentUserVec = matrix[userId] ?? {};
+  const hasHistory = Object.keys(currentUserVec).length > 0;
+ 
+  // Popularity fallback: count total bookings per boat across all users
+  const popularityMap: Record<string, number> = {};
+  for (const uid in matrix) {
+    for (const bid in matrix[uid]) {
+      popularityMap[bid] = (popularityMap[bid] ?? 0) + 1;
+    }
+  }
+ 
+  if (!hasHistory) {
+    // New user — return most popular boats the user hasn't explicitly booked
+    return (allBoats as BoatRow[])
+      .map((boat) => ({
+        ...boat,
+        bookingCount: popularityMap[String(boat.boat_id)] ?? 0,
+      }))
+      .sort((a, b) => (b.bookingCount ?? 0) - (a.bookingCount ?? 0))
+      .slice(0, limit);
+  }
+ 
+  // Collaborative score: weighted sum of similarity from users who booked each boat
+  const boatScore: Record<string, number> = {};
+ 
+  for (const otherUserId in matrix) {
+    if (otherUserId === userId) continue;
+ 
+    const sim = cosineSimilarity(currentUserVec, matrix[otherUserId]);
+    if (sim <= 0) continue;
+ 
+    for (const boatId in matrix[otherUserId]) {
+      // Only recommend boats the current user hasn't already booked
+      if (currentUserVec[boatId]) continue;
+      boatScore[boatId] = (boatScore[boatId] ?? 0) + sim;
+    }
+  }
+ 
+  const boatMap = new Map<string, BoatRow>(
+    (allBoats as BoatRow[]).map((b) => [String(b.boat_id), b])
+  );
+ 
+  const scored = Object.entries(boatScore)
+    .map(([boatId, score]) => ({ boatId, score }))
+    .sort((a, b) => b.score - a.score)
+    .slice(0, limit)
+    .map(({ boatId }) => boatMap.get(boatId))
+    .filter((b): b is BoatRow => b !== undefined);
+ 
+  // If collaborative filtering didn't find enough results, pad with popular boats
+  if (scored.length < limit) {
+    const scoredIds = new Set(scored.map((b) => String(b.boat_id)));
+    const popular = (allBoats as BoatRow[])
+      .filter(
+        (b) =>
+          !scoredIds.has(String(b.boat_id)) && !currentUserVec[String(b.boat_id)]
+      )
+      .map((boat) => ({
+        ...boat,
+        bookingCount: popularityMap[String(boat.boat_id)] ?? 0,
+      }))
+      .sort((a, b) => (b.bookingCount ?? 0) - (a.bookingCount ?? 0))
+      .slice(0, limit - scored.length);
+ 
+    return [...scored, ...popular];
+  }
+ 
+  return scored;
 }
 
 export async function searchrouteandtime(query: any = {}) {

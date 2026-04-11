@@ -2,7 +2,7 @@ import { Router } from "express";
 import {getUserSessionController} from "../controllers/sessioncontroller.js";
 import { authorizeRole  } from "../middleware/authorizationmiddleware.js";
 import {searchBoatsController , getAllBoatsController ,  bookBoatdetailsController ,physicalbookBoatController,getPendingBookingsController ,  getBookingDetailsController,getAcceptedBookingsController ,cancelPendingBookingController , getBookingHistoryController ,getCurrentUserDetailsCotroller ,confirmEditUserController,submitTicketController,getOnlineTripDetailsController, onlinebookBoatController , refundTicketController,
-  getRefundTicketCardsController,getSupportTicketCardsController , getTicketDetailsController , getRefundTicketDetailsController
+  getRefundTicketCardsController,getSupportTicketCardsController , getTicketDetailsController , getRefundTicketDetailsController, getRecommendedBoatsController
 } from "../controllers/usercontroller.js"
 import {requireAuth} from "../middleware/authmiddleware.js";
 import  {uploadGcashImage} from "../middleware/uploadgcashimage.js";
@@ -25,6 +25,7 @@ router.get("/getrefundticketcards", requireAuth, authorizeRole("user"),  getRefu
 router.get("/getsupportticketcards", requireAuth, authorizeRole("user"),  getSupportTicketCardsController);
 router.get("/getrefunddetails/:refundId", requireAuth, authorizeRole("user"),  getRefundTicketDetailsController);
 router.get("/getticketdetails/:ticketId", requireAuth, authorizeRole("user"),  getTicketDetailsController);
+router.get("/recommendations/:userId", requireAuth, authorizeRole("user"), getRecommendedBoatsController);
 
 router.post("/physicalbookboat", requireAuth, authorizeRole("user"), bookingLimiter, physicalbookBoatController);
 router.post("/onlinebookboat", requireAuth, authorizeRole("user"), bookingLimiter, parseBoatFiles, uploadGcashImage, onlinebookBoatController);

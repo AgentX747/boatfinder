@@ -37,7 +37,11 @@ export async function getAllBoatsController(req: Request, res: Response) {
     res.status(err.status || 500).json({ message: err.message });
   }
 }
-
+export async function getRecommendedBoatsController(req: Request, res: Response) {
+  const { userId } = req.params;
+  const boats = await userService.getRecommendedBoats(String(userId));
+  res.json(boats);
+}
 export async function bookBoatdetailsController(req: Request, res: Response) {
   try {
     const boatID = String(req.params.boatID);
