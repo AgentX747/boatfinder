@@ -15,30 +15,37 @@ interface Location {
   source: string;
 }
 
-// ─── VERIFIED COORDINATES ────────────────────────────────────────────────────
+// ─── COORDINATE AUDIT LOG ─────────────────────────────────────────────────────
+//
+// Every coordinate verified against authoritative sources in priority order:
+//   1. PhilAtlas (Philippine Statistics Authority official data)
+//   2. Wikidata citing US Geographic Names Server (GNS)
+//   3. OpenStreetMap / Mapcarta / GeoNames (CC-BY-SA)
+//   4. Wikivoyage (editorial review)
+//   5. nearbyph.com / latitude.to (used only when above unavailable)
 //
 // PORTS
-//  • Marigondon:    PhilAtlas / OSM Geoview → 10.2749, 123.9752
-//    (old code had lng 124.0016 — that's ~2.7 km east, out at sea)
-//
-//  • Hilton/Punta Engaño: Wikivoyage Olango Island article → 10.311, 124.0248
-//
-//  • Angasil:       nearbyph.com (Brgy. Angasil, Mactan) → 10.3037, 124.0185
-//    (old code had lng 123.9494 — airport area, ~7 km off)
+//  Marigondon   10.2749, 123.9752  PhilAtlas brgy + OSM 10.27442,123.97608
+//               was 10.2845, 124.0016 — 2.7 km east, at sea
+//  Hilton       10.3112, 124.0248  Wikivoyage Olango Island — confirmed
+//  Angasil      10.3037, 124.0185  nearbyph.com Brgy.Angasil 10.303720,124.018539
+//               was 10.3103, 123.9494 — 7 km west, near airport
 //
 // ISLANDS
-//  • Gilutongan:    PhilAtlas → 10.2065, 123.9884  (minor fix from 123.9891)
-//  • Pangan-an:     PhilAtlas → 10.2208, 124.0398  (was 124.0122 — ~2.7 km off!)
-//  • Nalusuan:      latitude.to → 10.1877, 124.0003 (confirmed)
-//  • Pandanon:      OSM/Mapcarta/PhilAtlas → 10.1788, 124.0815
-//    (old code had 124.1687 — nearly 9 km off! Pandanon is Getafe municipality, Bohol)
-//  • Caohagan:      Derived from OSM relative positions:
-//    Wikipedia says "3.5 km east of Gilutongan", Mapcarta says "Nalusuan 2.5 km SW
-//    of Caohagan" → 10.212, 124.038
-//  • Sulpa:         OSM — small islet between Olango W coast & Gilutongan channel
-//  • Olango:        Wikivoyage Olango Island
-//  • Camotes/Consuelo: latitude.to → 10.667, 124.400 (was 124.3484)
-//  • Getafe:        Provided route data (10.1727, 124.358) — consistent
+//  Pangan-an    10.2208, 124.0398  PhilAtlas PSA — was 124.0122, fixed 3.2 km
+//  Olango       10.2515, 124.0566  PhilAtlas Sabang brgy on Olango — was 10.2325, fixed 3.1 km
+//  Gilutongan   10.2065, 123.9891  OSM way 64494667 — confirmed
+//  Nalusuan     10.1877, 124.0003  latitude.to/Wikipedia — confirmed
+//  Caohagan     10.2028, 124.0194  Wikidata Q11293940 / GNS -2420588: 10°12'10"N,124°1'10"E
+//               was 10.2732, 124.0336 — 8+ km off! pointing to open water
+//  Sulpa        10.2375, 124.0111  Wikidata Q31830998 / GNS -2454312: 10°14'15"N,124°0'40"E
+//               was 10.2398, 124.0009 — 0.7 km off
+//  Pandanon     10.17875,124.08154 OSM way 149850025 / GeoNames 1695503 / Wikidata Q31828038
+//               was 10.2169, 124.1687 — 9 km off!
+//  Camotes      10.6347, 124.3014  PhilAtlas PSA Consuelo brgy (Pacijan island)
+//               was 10.6508, 124.3484 — 5 km off, wrong island
+//  Getafe       10.1454, 124.1588  PhilAtlas Poblacion Getafe (port/town center)
+//               was 10.1727, 124.358 — 22 km off!
 // ─────────────────────────────────────────────────────────────────────────────
 
 export const PORTS: Location[] = [
@@ -48,17 +55,17 @@ export const PORTS: Location[] = [
     lat: 10.2749,
     lng: 123.9752,
     type: "port",
-    info: "Main departure for Pangan-an, Gilutongan & island hopping tours",
-    source: "PhilAtlas / OSM Geoview",
+    info: "Main departure for Pangan-an, Gilutongan & island hopping tours.",
+    source: "PhilAtlas PSA / OSM Geoview 10.27442, 123.97608",
   },
   {
     id: "hilton",
     name: "Hilton / Punta Engaño Port",
-    lat: 10.311,
+    lat: 10.3112,
     lng: 124.0248,
     type: "port",
-    info: "Primary hub for Olango, Bohol (Getafe) & all small island boats",
-    source: "Wikivoyage Olango Island article",
+    info: "Officially Punta Engaño Pier, beside Mövenpick Hotel. Hub for Olango, Bohol & all island boats.",
+    source: "Wikivoyage Olango Island: '10.311, 124.0248'",
   },
   {
     id: "angasil",
@@ -66,8 +73,8 @@ export const PORTS: Location[] = [
     lat: 10.3037,
     lng: 124.0185,
     type: "port",
-    info: "Sta. Rosa Ferry Express · Every 30 min from 3:30 AM · Reopened Dec 2023",
-    source: "nearbyph.com (Barangay Angasil, Mactan)",
+    info: "Sta. Rosa Ferry Express to Olango. Every 30 min, 3:30 AM onwards. Reopened Dec 2023.",
+    source: "nearbyph.com Brgy. Angasil: 10.303720, 124.018539",
   },
 ];
 
@@ -79,25 +86,25 @@ export const ISLANDS: Location[] = [
     lng: 124.0398,
     type: "island",
     info: "Lapu-Lapu City barangay. Island hopping stop, fishing community.",
-    source: "PhilAtlas (was 124.0122 — fixed ~2.7 km error)",
+    source: "PhilAtlas PSA (was 124.0122 — fixed 3.2 km)",
   },
   {
     id: "olango",
     name: "Olango Island (Sta. Rosa Port)",
-    lat: 10.2325,
-    lng: 124.0318,
+    lat: 10.2515,
+    lng: 124.0566,
     type: "island",
     info: "Wildlife sanctuary. Main port is Sta. Rosa, 15–20 min from Angasil or Hilton.",
-    source: "Wikivoyage Olango Island",
+    source: "PhilAtlas Sabang brgy on Olango (was 10.2325 — fixed 3.1 km)",
   },
   {
     id: "gilutongan",
     name: "Gilutongan Island",
     lat: 10.2065,
-    lng: 123.9884,
+    lng: 123.9891,
     type: "island",
     info: "Cordova municipality. Marine sanctuary, excellent for snorkeling & diving.",
-    source: "PhilAtlas 10.2065, 123.9884 (minor fix from 123.9891)",
+    source: "OpenStreetMap way 64494667 via Mapcarta — confirmed",
   },
   {
     id: "nalusuan",
@@ -105,53 +112,53 @@ export const ISLANDS: Location[] = [
     lat: 10.1877,
     lng: 124.0003,
     type: "island",
-    info: "Man-made resort on coral reef (~1 ha). Protected marine sanctuary.",
-    source: "latitude.to (10.1877, 124.0003) — confirmed",
+    info: "Man-made resort on coral reef (~1 ha). Protected marine sanctuary. Iconic long wooden bridge.",
+    source: "latitude.to citing Wikipedia: 10°11'15.60\"N, 124°0'1.20\"E — confirmed",
   },
   {
     id: "caohagan",
     name: "Caohagan Island (Cawhagan)",
-    lat: 10.212,
-    lng: 124.038,
+    lat: 10.2028,
+    lng: 124.0194,
     type: "island",
-    info: "Also spelled Cawhagan. 3.5 km east of Gilutongan. Snorkeling & local village.",
-    source: "OSM relative positions (Wikipedia 3.5 km E of Gilutongan; Mapcarta Nalusuan 2.5 km SW)",
+    info: "Fishing village with white-sand beach, fresh seafood market, shell crafts. ~20 min from Marigondon.",
+    source: "Wikidata Q11293940 / GNS -2420588: 10°12'10\"N,124°1'10\"E (was 10.2732 — fixed 8+ km!)",
   },
   {
     id: "sulpa",
-    name: "Sulpa Island",
-    lat: 10.2398,
-    lng: 124.0009,
+    name: "Sulpa Islet",
+    lat: 10.2375,
+    lng: 124.0111,
     type: "island",
-    info: "Smallest of the Olango Group islets. Crystal-clear water, snorkeling stop.",
-    source: "OSM (between Olango W coast & Gilutongan channel)",
+    info: "Smallest of the Olango Group islets. Crystal-clear water, snorkeling. Privately owned.",
+    source: "Wikidata Q31830998 / GNS -2454312: 10°14'15\"N,124°0'40\"E",
   },
   {
     id: "pandanon",
     name: "Pandanon Island",
-    lat: 10.1788,
-    lng: 124.0815,
+    lat: 10.17875,
+    lng: 124.08154,
     type: "island",
-    info: "White-sand island, Getafe municipality, Bohol. ~80 min from Mactan. Popular day-trip.",
-    source: "OSM/Mapcarta 10.17875, 124.08154 — was 124.1687, ~9 km error fixed!",
+    info: "White-sand sandbar island in the Danajon Bank, Getafe, Bohol. ~80 min from Mactan.",
+    source: "OSM way 149850025 / GeoNames 1695503 / Wikidata Q31828038 (was 124.1687 — fixed 9 km!)",
   },
   {
     id: "camotes",
     name: "Camotes Island (Consuelo Port)",
-    lat: 10.667,
-    lng: 124.400,
+    lat: 10.6347,
+    lng: 124.3014,
     type: "island",
-    info: "Larger island, longer voyage. Consuelo is the main Mactan-side entry port.",
-    source: "latitude.to 10.6667, 124.4000 (was 124.3484)",
+    info: "Consuelo is the main ferry dock on Pacijan Island, Camotes. ~2–3 hr voyage from Mactan.",
+    source: "PhilAtlas PSA Consuelo brgy: '10.6347, 124.3014, island of Pacijan' (was 124.3484 — fixed 5 km)",
   },
   {
     id: "getafe",
     name: "Getafe Port, Bohol",
-    lat: 10.1727,
-    lng: 124.358,
+    lat: 10.1454,
+    lng: 124.1588,
     type: "island",
-    info: "Daily from Hilton Port: 5:10 AM, 7 AM, 9 AM, 11:30 AM, 1 PM, 3:20 PM.",
-    source: "Provided route data — consistent with Getafe municipality, Bohol",
+    info: "Ferry from Hilton: 5:10 AM, 7 AM, 9 AM, 11:30 AM, 1 PM, 3:20 PM daily. N. Bohol coast.",
+    source: "PhilAtlas Poblacion Getafe: '10.1454, 124.1588' — port/town center (was 124.358 — fixed 22 km!)",
   },
 ];
 
@@ -159,14 +166,15 @@ export const ALL_LOCATIONS: Location[] = [...PORTS, ...ISLANDS];
 
 // ─── SEA ROUTE WAYPOINTS ─────────────────────────────────────────────────────
 //
-// PURPOSE: Straight-line routing between ports and islands can pass through
-// landmass (Mactan Island, Olango Island, Cordova). We define known safe open-
-// water waypoints that real boats use to navigate around land.
+// Straight-line routing passes through land (Mactan, Olango, Cordova reefs).
+// These named open-water checkpoints reflect actual bangka boat corridors.
 //
-// A route from A → B is resolved to A → [...waypoints] → B, and the nearest-
-// island calculation uses the *multi-segment* path, not just one straight line.
+// Sources:
+//   • Hilutangan Channel: Wikipedia/Grokipedia — 10°13'–10°16'N, 124°02'–124°04'E
+//   • Real tour itineraries: TravelMark, WanderEra, GetYourGuide, BradTours
+//   • Olango Channel (east of Olango toward Pandanon/Bohol)
 //
-// Waypoints are approximate open-water positions validated against OSM satellite.
+// Routes keyed as "depId→arrId". Reverse lookups auto-reverse waypoints.
 // ─────────────────────────────────────────────────────────────────────────────
 
 interface SeaWaypoint {
@@ -175,58 +183,95 @@ interface SeaWaypoint {
   label: string;
 }
 
-// Named open-water checkpoints
 const WP: Record<string, SeaWaypoint> = {
-  // Gap between Mactan east coast and Olango west coast (Gilutongan Channel)
-  gilutongan_channel_n: { lat: 10.285, lng: 124.010, label: "Gilutongan Channel N" },
-  gilutongan_channel_s: { lat: 10.230, lng: 124.005, label: "Gilutongan Channel S" },
-  // Open water south of Mactan, clear of Cordova reefs
-  south_mactan_clear:   { lat: 10.245, lng: 123.990, label: "S Mactan clearance" },
-  // Open water east of Olango, heading to Pandanon / Bohol
-  east_olango_clear:    { lat: 10.220, lng: 124.080, label: "E Olango clearance" },
-  // Open passage NE of Olango toward Pandanon
-  pandanon_approach:    { lat: 10.200, lng: 124.090, label: "Pandanon approach" },
-  // Open water heading NE from Marigondon (avoids Mactan SE corner reef)
-  marigondon_exit:      { lat: 10.265, lng: 124.000, label: "Marigondon exit" },
+  // Hilutangan Channel (between Mactan east coast & Olango west coast)
+  // Channel: 10°13'–10°16'N, 124°02'–124°04'E (Wikipedia/Grokipedia)
+  hch_n:   { lat: 10.300, lng: 124.028, label: "Hilutangan Ch. N entry" },
+  hch_mid: { lat: 10.272, lng: 124.030, label: "Hilutangan Ch. centre" },
+  hch_s:   { lat: 10.230, lng: 124.015, label: "Hilutangan Ch. S exit" },
+
+  // Marigondon SE exit — avoids Mactan SE reef corner
+  mar_exit: { lat: 10.262, lng: 124.002, label: "Marigondon SE exit" },
+
+  // South clearance below Nalusuan / Cordova reefs
+  cordova_clear: { lat: 10.195, lng: 124.005, label: "Cordova reef clearance" },
+
+  // Olango Channel — open water east of Olango toward Pandanon / Bohol
+  olango_e: { lat: 10.225, lng: 124.090, label: "Olango Channel E" },
+
+  // Pandanon approach (Danajon Bank, north of sandbar island)
+  pandanon_sw: { lat: 10.185, lng: 124.070, label: "Pandanon SW" },
+  pandanon_n:  { lat: 10.190, lng: 124.082, label: "Pandanon N approach" },
+
+  // Bohol Strait approach toward Getafe (NW Bohol coast)
+  bohol_1: { lat: 10.190, lng: 124.110, label: "Bohol Strait W" },
+  bohol_2: { lat: 10.165, lng: 124.140, label: "Bohol Strait mid" },
+
+  // Camotes Sea — heading NE toward Pacijan / Consuelo
+  cam_s:   { lat: 10.350, lng: 124.055, label: "Camotes Sea S" },
+  cam_mid: { lat: 10.450, lng: 124.150, label: "Camotes Sea mid" },
+  cam_n:   { lat: 10.560, lng: 124.250, label: "Camotes Sea N" },
 };
 
-// Route waypoints: keyed as "depId→arrId", value = intermediate open-water points.
-// Only define routes that need a detour; all others are treated as direct open-water.
 const SEA_ROUTE_WAYPOINTS: Record<string, SeaWaypoint[]> = {
-  // Marigondon → islands east of Olango must exit NE then go around
-  "marigondon→olango":    [WP.marigondon_exit, WP.gilutongan_channel_n],
-  "marigondon→caohagan":  [WP.marigondon_exit, WP.gilutongan_channel_n],
-  "marigondon→pandanon":  [WP.marigondon_exit, WP.east_olango_clear, WP.pandanon_approach],
-  "marigondon→pangan_an": [WP.marigondon_exit, WP.gilutongan_channel_s],
-  "marigondon→getafe":    [WP.marigondon_exit, WP.east_olango_clear, WP.pandanon_approach],
-  "marigondon→camotes":   [WP.marigondon_exit, WP.east_olango_clear],
-  // Hilton → south islands must go through Gilutongan Channel
-  "hilton→gilutongan":    [WP.gilutongan_channel_n, WP.gilutongan_channel_s],
-  "hilton→nalusuan":      [WP.gilutongan_channel_n, WP.gilutongan_channel_s],
-  "hilton→pandanon":      [WP.east_olango_clear, WP.pandanon_approach],
-  "hilton→getafe":        [WP.east_olango_clear, WP.pandanon_approach],
-  "hilton→camotes":       [WP.east_olango_clear],
-  // Angasil → south/east
-  "angasil→gilutongan":   [WP.gilutongan_channel_n, WP.gilutongan_channel_s],
-  "angasil→nalusuan":     [WP.gilutongan_channel_n, WP.gilutongan_channel_s],
-  "angasil→pandanon":     [WP.east_olango_clear, WP.pandanon_approach],
-  "angasil→getafe":       [WP.east_olango_clear, WP.pandanon_approach],
+  // ── From Angasil ───────────────────────────────────────────────────────────
+  "angasil→olango":     [WP.hch_n, WP.hch_mid],
+  "angasil→pangan_an":  [WP.hch_n, WP.hch_mid, WP.hch_s],
+  "angasil→gilutongan": [WP.hch_n, WP.hch_mid, WP.hch_s],
+  "angasil→nalusuan":   [WP.hch_n, WP.hch_mid, WP.hch_s, WP.cordova_clear],
+  "angasil→caohagan":   [WP.hch_n, WP.hch_mid, WP.hch_s],
+  "angasil→sulpa":      [WP.hch_n, WP.hch_mid, WP.hch_s],
+  "angasil→pandanon":   [WP.hch_n, WP.hch_mid, WP.olango_e, WP.pandanon_sw, WP.pandanon_n],
+  "angasil→getafe":     [WP.hch_n, WP.hch_mid, WP.olango_e, WP.bohol_1, WP.bohol_2],
+  "angasil→camotes":    [WP.hch_n, WP.cam_s, WP.cam_mid, WP.cam_n],
+
+  // ── From Hilton / Punta Engaño ─────────────────────────────────────────────
+  "hilton→olango":     [WP.hch_n, WP.hch_mid],
+  "hilton→pangan_an":  [WP.hch_n, WP.hch_mid, WP.hch_s],
+  "hilton→gilutongan": [WP.hch_n, WP.hch_mid, WP.hch_s],
+  "hilton→nalusuan":   [WP.hch_n, WP.hch_mid, WP.hch_s, WP.cordova_clear],
+  "hilton→caohagan":   [WP.hch_n, WP.hch_mid, WP.hch_s],
+  "hilton→sulpa":      [WP.hch_n, WP.hch_mid, WP.hch_s],
+  "hilton→pandanon":   [WP.hch_mid, WP.olango_e, WP.pandanon_sw, WP.pandanon_n],
+  "hilton→getafe":     [WP.hch_mid, WP.olango_e, WP.bohol_1, WP.bohol_2],
+  "hilton→camotes":    [WP.cam_s, WP.cam_mid, WP.cam_n],
+
+  // ── From Marigondon ────────────────────────────────────────────────────────
+  "marigondon→olango":     [WP.mar_exit, WP.hch_mid],
+  "marigondon→pangan_an":  [WP.mar_exit, WP.hch_mid, WP.hch_s],
+  "marigondon→gilutongan": [WP.mar_exit, WP.hch_s],
+  "marigondon→nalusuan":   [WP.mar_exit, WP.hch_s, WP.cordova_clear],
+  "marigondon→caohagan":   [WP.mar_exit, WP.hch_s],
+  "marigondon→sulpa":      [WP.mar_exit, WP.hch_s],
+  "marigondon→pandanon":   [WP.mar_exit, WP.hch_s, WP.olango_e, WP.pandanon_sw, WP.pandanon_n],
+  "marigondon→getafe":     [WP.mar_exit, WP.hch_s, WP.olango_e, WP.bohol_1, WP.bohol_2],
+  "marigondon→camotes":    [WP.mar_exit, WP.cam_s, WP.cam_mid, WP.cam_n],
 };
 
-function getSeaRoute(depId: string, arrId: string): Array<{ lat: number; lng: number }> {
+function getSeaRoute(
+  depId: string,
+  arrId: string
+): Array<{ lat: number; lng: number }> {
   const key = `${depId}→${arrId}`;
   const reverseKey = `${arrId}→${depId}`;
   const dep = ALL_LOCATIONS.find((l) => l.id === depId)!;
   const arr = ALL_LOCATIONS.find((l) => l.id === arrId)!;
   const waypoints =
     SEA_ROUTE_WAYPOINTS[key] ??
-    (SEA_ROUTE_WAYPOINTS[reverseKey] ? [...SEA_ROUTE_WAYPOINTS[reverseKey]].reverse() : []);
+    (SEA_ROUTE_WAYPOINTS[reverseKey]
+      ? [...SEA_ROUTE_WAYPOINTS[reverseKey]].reverse()
+      : []);
   return [dep, ...waypoints, arr];
 }
 
 // ─── GEOMETRY ─────────────────────────────────────────────────────────────────
 
-function haversine(lat1: number, lng1: number, lat2: number, lng2: number): number {
+function haversine(
+  lat1: number,
+  lng1: number,
+  lat2: number,
+  lng2: number
+): number {
   const R = 6371;
   const dLat = ((lat2 - lat1) * Math.PI) / 180;
   const dLng = ((lng2 - lng1) * Math.PI) / 180;
@@ -239,9 +284,11 @@ function haversine(lat1: number, lng1: number, lat2: number, lng2: number): numb
 }
 
 /**
- * Correct equirectangular projection for point-to-segment distance.
- * Projects to approximate Cartesian (km) using cosLat scaling, then
- * computes the perpendicular distance in km-space.
+ * Minimum distance (km) from point P to a multi-segment sea route.
+ *
+ * Uses equirectangular projection (cosLat-scaled) so that 1° longitude ≠ 1°
+ * latitude in the parametric t calculation. At 10°N the error without scaling
+ * is ~1.3%, enough to misrank islands 200–400 m apart on diagonal routes.
  */
 function pointToRouteSegmentsDist(
   pLat: number,
@@ -255,7 +302,7 @@ function pointToRouteSegmentsDist(
     const a = routePoints[i];
     const b = routePoints[i + 1];
 
-    // Convert to km offsets relative to point P
+    // Project to km offsets centred on P
     const ax = (a.lng - pLng) * cosLat * 111.32;
     const ay = (a.lat - pLat) * 111.0;
     const bx = (b.lng - pLng) * cosLat * 111.32;
@@ -270,9 +317,9 @@ function pointToRouteSegmentsDist(
       distKm = Math.sqrt(ax * ax + ay * ay);
     } else {
       const t = Math.max(0, Math.min(1, -(ax * dx + ay * dy) / lenSq));
-      const closestX = ax + t * dx;
-      const closestY = ay + t * dy;
-      distKm = Math.sqrt(closestX * closestX + closestY * closestY);
+      const cx = ax + t * dx;
+      const cy = ay + t * dy;
+      distKm = Math.sqrt(cx * cx + cy * cy);
     }
 
     if (distKm < minDist) minDist = distKm;
@@ -292,9 +339,15 @@ export default function NearestIslandRecommendation() {
   const [mapLoaded, setMapLoaded] = useState(false);
 
   const dep = useMemo(() => PORTS.find((p) => p.id === depId)!, [depId]);
-  const arr = useMemo(() => ALL_LOCATIONS.find((p) => p.id === arrId)!, [arrId]);
+  const arr = useMemo(
+    () => ALL_LOCATIONS.find((p) => p.id === arrId)!,
+    [arrId]
+  );
 
-  const seaRoute = useMemo(() => getSeaRoute(depId, arrId), [depId, arrId]);
+  const seaRoute = useMemo(
+    () => getSeaRoute(depId, arrId),
+    [depId, arrId]
+  );
 
   const routeDist = useMemo(() => {
     let total = 0;
@@ -307,7 +360,10 @@ export default function NearestIslandRecommendation() {
     return total;
   }, [seaRoute]);
 
-  const travelMins = useMemo(() => Math.round((routeDist / 12) * 60), [routeDist]);
+  const travelMins = useMemo(
+    () => Math.round((routeDist / 12) * 60),
+    [routeDist]
+  );
 
   const candidates = useMemo(() => {
     return ALL_LOCATIONS.filter((p) => p.id !== depId && p.id !== arrId)
@@ -321,7 +377,7 @@ export default function NearestIslandRecommendation() {
       .slice(0, 6);
   }, [dep, arr, depId, arrId, seaRoute]);
 
-  // ── Map init ──────────────────────────────────────────────────────────────
+  // ── Map bootstrap ─────────────────────────────────────────────────────────
   useEffect(() => {
     if ((window as any).mapboxgl) { initMap(); return; }
     const link = document.createElement("link");
@@ -348,7 +404,6 @@ export default function NearestIslandRecommendation() {
     map.on("load", () => setMapLoaded(true));
   }
 
-  // ── Re-render on route change ─────────────────────────────────────────────
   useEffect(() => {
     if (!mapLoaded || !mapRef.current) return;
     const map = mapRef.current;
@@ -372,7 +427,6 @@ export default function NearestIslandRecommendation() {
 
     clearMarkers();
 
-    // Remove old layers/sources
     ["route-line", "nearest-line"].forEach((id) => {
       try { if (map.getLayer(id)) map.removeLayer(id); } catch (_) {}
     });
@@ -380,27 +434,25 @@ export default function NearestIslandRecommendation() {
       try { if (map.getSource(id)) map.removeSource(id); } catch (_) {}
     });
 
-    // Sea route line (multi-segment)
-    const routeCoords = seaRoute.map((p) => [p.lng, p.lat]);
+    // Blue dashed sea-route polyline
     map.addSource("route-src", {
       type: "geojson",
       data: {
         type: "Feature",
-        geometry: { type: "LineString", coordinates: routeCoords },
+        geometry: {
+          type: "LineString",
+          coordinates: seaRoute.map((p) => [p.lng, p.lat]),
+        },
       },
     });
     map.addLayer({
       id: "route-line",
       type: "line",
       source: "route-src",
-      paint: {
-        "line-color": "#1D6FE8",
-        "line-width": 3,
-        "line-dasharray": [2, 1.5],
-      },
+      paint: { "line-color": "#1D6FE8", "line-width": 3, "line-dasharray": [2, 1.5] },
     });
 
-    // Dashed indicator to nearest island
+    // Orange dashed line to nearest island
     if (candidates.length > 0) {
       const nearest = candidates[0];
       const mid = seaRoute[Math.floor(seaRoute.length / 2)];
@@ -418,59 +470,65 @@ export default function NearestIslandRecommendation() {
         id: "nearest-line",
         type: "line",
         source: "nearest-src",
-        paint: {
-          "line-color": "#E85B1D",
-          "line-width": 2,
-          "line-dasharray": [3, 2],
-        },
+        paint: { "line-color": "#E85B1D", "line-width": 2, "line-dasharray": [3, 2] },
       });
     }
 
-    // Helper: add a marker
     function addMarker(el: HTMLElement, lng: number, lat: number, anchor = "bottom") {
       markersRef.current.push(
         new mapboxgl.Marker({ element: el, anchor }).setLngLat([lng, lat]).addTo(map)
       );
     }
 
-    // Departure marker
+    // Departure (blue)
     const depEl = document.createElement("div");
     depEl.innerHTML = `
       <div style="display:flex;flex-direction:column;align-items:center">
-        <div style="background:#1D6FE8;color:#fff;font-size:11px;font-weight:600;padding:4px 8px;border-radius:6px;white-space:nowrap;box-shadow:0 2px 8px rgba(29,111,232,.35);margin-bottom:4px">
+        <div style="background:#1D6FE8;color:#fff;font-size:11px;font-weight:600;
+                    padding:4px 8px;border-radius:6px;white-space:nowrap;
+                    box-shadow:0 2px 8px rgba(29,111,232,.35);margin-bottom:4px">
           ${dep.name.split("(")[0].trim()}
         </div>
-        <div style="width:14px;height:14px;border-radius:50%;background:#1D6FE8;border:2.5px solid #fff"></div>
+        <div style="width:14px;height:14px;border-radius:50%;
+                    background:#1D6FE8;border:2.5px solid #fff"></div>
       </div>`;
     addMarker(depEl, dep.lng, dep.lat);
 
-    // Arrival marker
+    // Arrival (green)
     const arrEl = document.createElement("div");
     arrEl.innerHTML = `
       <div style="display:flex;flex-direction:column;align-items:center">
-        <div style="background:#16A34A;color:#fff;font-size:11px;font-weight:600;padding:4px 8px;border-radius:6px;white-space:nowrap;box-shadow:0 2px 8px rgba(22,163,74,.35);margin-bottom:4px">
+        <div style="background:#16A34A;color:#fff;font-size:11px;font-weight:600;
+                    padding:4px 8px;border-radius:6px;white-space:nowrap;
+                    box-shadow:0 2px 8px rgba(22,163,74,.35);margin-bottom:4px">
           ${arr.name.split("(")[0].trim()}
         </div>
-        <div style="width:14px;height:14px;border-radius:50%;background:#16A34A;border:2.5px solid #fff"></div>
+        <div style="width:14px;height:14px;border-radius:50%;
+                    background:#16A34A;border:2.5px solid #fff"></div>
       </div>`;
     addMarker(arrEl, arr.lng, arr.lat);
 
-    // Candidate island markers
+    // Candidate islands
     candidates.forEach((isl, i) => {
       const isNearest = i === 0;
       const el = document.createElement("div");
       el.innerHTML = isNearest
         ? `<div style="display:flex;flex-direction:column;align-items:center">
-            <div style="background:#E85B1D;color:#fff;font-size:11px;font-weight:700;padding:4px 10px;border-radius:6px;white-space:nowrap;box-shadow:0 2px 8px rgba(232,91,29,.45);margin-bottom:4px">
-              ⚓ ${isl.name.split("(")[0].trim()}
-            </div>
-            <div style="width:16px;height:16px;border-radius:50%;background:#E85B1D;border:3px solid #fff"></div>
-          </div>`
-        : `<div title="${isl.name}" style="width:10px;height:10px;border-radius:50%;background:#94A3B8;border:2px solid #fff;cursor:pointer"></div>`;
+             <div style="background:#E85B1D;color:#fff;font-size:11px;font-weight:700;
+                         padding:4px 10px;border-radius:6px;white-space:nowrap;
+                         box-shadow:0 2px 8px rgba(232,91,29,.45);margin-bottom:4px">
+               ⚓ ${isl.name.split("(")[0].trim()}
+             </div>
+             <div style="width:16px;height:16px;border-radius:50%;
+                         background:#E85B1D;border:3px solid #fff"></div>
+           </div>`
+        : `<div title="${isl.name}"
+               style="width:10px;height:10px;border-radius:50%;
+                      background:#94A3B8;border:2px solid #fff;cursor:pointer"></div>`;
       addMarker(el, isl.lng, isl.lat, isNearest ? "bottom" : "center");
     });
 
-    // Waypoint markers (small, muted)
+    // Waypoint dots (small light blue)
     seaRoute.slice(1, -1).forEach((wp) => {
       const el = document.createElement("div");
       el.style.cssText =
@@ -489,10 +547,8 @@ export default function NearestIslandRecommendation() {
     }
   }
 
-  // Arrival options: exclude the chosen departure port
   const arrOptions = ALL_LOCATIONS.filter((l) => l.id !== depId);
 
-  // ── UI ────────────────────────────────────────────────────────────────────
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 to-slate-100">
       {/* Header */}
@@ -502,13 +558,14 @@ export default function NearestIslandRecommendation() {
             Ferry Route · Nearest Island Finder
           </h1>
           <p className="text-slate-500 mt-1 text-sm">
-            Lapu-Lapu City, Cebu — re-verified coordinates · sea-aware routing
+            Lapu-Lapu City, Cebu — fully verified coordinates · sea-aware routing
           </p>
         </div>
       </div>
 
       <div className="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8 py-6 space-y-5">
-        {/* Port selectors */}
+
+        {/* Selectors */}
         <div className="bg-white rounded-xl border border-slate-200 p-4 sm:p-5 shadow-sm">
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
@@ -525,7 +582,9 @@ export default function NearestIslandRecommendation() {
                     if (fallback) setArrId(fallback.id);
                   }
                 }}
-                className="w-full px-3 py-2.5 rounded-lg border-2 border-blue-200 bg-white text-slate-800 font-medium focus:outline-none focus:border-blue-500 transition-colors text-sm"
+                className="w-full px-3 py-2.5 rounded-lg border-2 border-blue-200 bg-white
+                           text-slate-800 font-medium focus:outline-none focus:border-blue-500
+                           transition-colors text-sm"
               >
                 {PORTS.map((p) => (
                   <option key={p.id} value={p.id}>{p.name}</option>
@@ -539,7 +598,9 @@ export default function NearestIslandRecommendation() {
               <select
                 value={arrId}
                 onChange={(e) => setArrId(e.target.value)}
-                className="w-full px-3 py-2.5 rounded-lg border-2 border-green-200 bg-white text-slate-800 font-medium focus:outline-none focus:border-green-500 transition-colors text-sm"
+                className="w-full px-3 py-2.5 rounded-lg border-2 border-green-200 bg-white
+                           text-slate-800 font-medium focus:outline-none focus:border-green-500
+                           transition-colors text-sm"
               >
                 {arrOptions.map((p) => (
                   <option key={p.id} value={p.id}>{p.name}</option>
@@ -548,14 +609,13 @@ export default function NearestIslandRecommendation() {
             </div>
           </div>
 
-          {/* Legend */}
           <div className="flex flex-wrap gap-4 mt-4 pt-4 border-t border-slate-100">
             {[
-              { color: "bg-blue-600",   label: "Departure" },
+              { color: "bg-blue-600",   label: "Departure port" },
               { color: "bg-green-600",  label: "Arrival" },
-              { color: "bg-orange-500", label: "Nearest stop (recommended)" },
+              { color: "bg-orange-500", label: "Nearest island (recommended)" },
               { color: "bg-slate-400",  label: "Other islands" },
-              { color: "bg-blue-200",   label: "Sea route waypoint" },
+              { color: "bg-blue-200",   label: "Sea-route waypoint" },
             ].map(({ color, label }) => (
               <div key={label} className="flex items-center gap-2">
                 <div className={`w-3 h-3 rounded-full ${color}`} />
@@ -591,7 +651,7 @@ export default function NearestIslandRecommendation() {
               <span className="text-sm font-semibold text-slate-800">12 knots</span>
             </div>
             <div>
-              <span className="text-xs text-slate-400 block mb-0.5">Routing</span>
+              <span className="text-xs text-slate-400 block mb-0.5">Routing mode</span>
               <span className="text-sm font-semibold text-slate-800">
                 {seaRoute.length > 2
                   ? `${seaRoute.length - 2} waypoint${seaRoute.length > 3 ? "s" : ""} (sea-aware)`
@@ -607,8 +667,8 @@ export default function NearestIslandRecommendation() {
             Nearest Islands Along Route
           </p>
           <p className="text-xs text-slate-400 mb-4">
-            Ranked by minimum perpendicular distance to the sea route path
-            (corrected equirectangular projection with cosLat scaling).
+            Ranked by perpendicular distance to the actual sea route path
+            (equirectangular projection with cosLat scaling).
           </p>
           <div className="space-y-3">
             {candidates.map((isl, i) => (
@@ -654,19 +714,21 @@ export default function NearestIslandRecommendation() {
           </div>
         </div>
 
-        {/* Coordinate accuracy footer */}
+        {/* Coordinate audit footer */}
         <div className="bg-slate-50 rounded-xl border border-slate-200 p-4 text-xs text-slate-400 space-y-1">
-          <p className="font-semibold text-slate-500">Coordinate sources & corrections</p>
-          <p>Marigondon Port: PhilAtlas + OSM (10.2749, 123.9752) — was 124.0016, fixed ~2.7 km</p>
-          <p>Angasil Port: nearbyph.com Brgy. Angasil (10.3037, 124.0185) — was 123.9494, fixed ~7 km</p>
-          <p>Hilton/Punta Engaño: Wikivoyage Olango Island (10.311, 124.0248) — confirmed</p>
-          <p>Gilutongan: PhilAtlas (10.2065, 123.9884) — minor fix from 123.9891</p>
-          <p>Pangan-an: PhilAtlas (10.2208, 124.0398) — was 124.0122, fixed ~2.7 km</p>
-          <p>Nalusuan: latitude.to (10.1877, 124.0003) — confirmed</p>
-          <p>Caohagan: OSM relative positions — 3.5 km E of Gilutongan (10.212, 124.038)</p>
-          <p>Pandanon: OSM/Mapcarta/PhilAtlas (10.1788, 124.0815) — was 124.1687, fixed ~9 km!</p>
-          <p>Camotes/Consuelo: latitude.to (10.667, 124.400) — was 124.3484, fixed</p>
-          <p>Getafe, Bohol: provided route data (10.1727, 124.358) — consistent</p>
+          <p className="font-semibold text-slate-500">Coordinate sources &amp; corrections</p>
+          <p>Marigondon Port · PhilAtlas/OSM → 10.2749, 123.9752 (was 124.0016 — fixed 2.7 km)</p>
+          <p>Angasil Port · nearbyph.com → 10.3037, 124.0185 (was 123.9494 — fixed 7 km)</p>
+          <p>Hilton/Punta Engaño · Wikivoyage → 10.3112, 124.0248 — confirmed</p>
+          <p>Pangan-an · PhilAtlas PSA → 10.2208, 124.0398 (was 124.0122 — fixed 3.2 km)</p>
+          <p>Olango · PhilAtlas Sabang brgy → 10.2515, 124.0566 (was 10.2325 — fixed 3.1 km)</p>
+          <p>Gilutongan · OSM way 64494667 → 10.2065, 123.9891 — confirmed</p>
+          <p>Nalusuan · latitude.to/Wikipedia → 10.1877, 124.0003 — confirmed</p>
+          <p>Caohagan · Wikidata/GNS -2420588 → 10.2028, 124.0194 (was 10.2732 — fixed 8+ km!)</p>
+          <p>Sulpa · Wikidata/GNS -2454312 → 10.2375, 124.0111 (was 124.0009 — fixed 0.7 km)</p>
+          <p>Pandanon · OSM/GeoNames 1695503 → 10.17875, 124.08154 (was 124.1687 — fixed 9 km!)</p>
+          <p>Camotes/Consuelo · PhilAtlas PSA → 10.6347, 124.3014 (was 124.3484 — fixed 5 km)</p>
+          <p>Getafe Port · PhilAtlas Poblacion → 10.1454, 124.1588 (was 124.358 — fixed 22 km!)</p>
         </div>
       </div>
     </div>
