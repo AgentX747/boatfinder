@@ -1,4 +1,18 @@
 import { useEffect, useRef, useState, useMemo } from "react";
+import {
+  AlertTriangle,
+  Anchor,
+  Navigation,
+  MapPin,
+  Clock,
+  Waves,
+  Shield,
+  Radio,
+  Zap,
+  ChevronRight,
+  LifeBuoy,
+  Siren,
+} from "lucide-react";
 
 // ─── MAPBOX ───────────────────────────────────────────────────────────────────
 const MAPBOX_KEY =
@@ -15,39 +29,7 @@ interface Location {
   source: string;
 }
 
-// ─── COORDINATE AUDIT LOG ─────────────────────────────────────────────────────
-//
-// Every coordinate verified against authoritative sources in priority order:
-//   1. PhilAtlas (Philippine Statistics Authority official data)
-//   2. Wikidata citing US Geographic Names Server (GNS)
-//   3. OpenStreetMap / Mapcarta / GeoNames (CC-BY-SA)
-//   4. Wikivoyage (editorial review)
-//   5. nearbyph.com / latitude.to (used only when above unavailable)
-//
-// PORTS
-//  Marigondon   10.2749, 123.9752  PhilAtlas brgy + OSM 10.27442,123.97608
-//               was 10.2845, 124.0016 — 2.7 km east, at sea
-//  Hilton       10.3112, 124.0248  Wikivoyage Olango Island — confirmed
-//  Angasil      10.3037, 124.0185  nearbyph.com Brgy.Angasil 10.303720,124.018539
-//               was 10.3103, 123.9494 — 7 km west, near airport
-//
-// ISLANDS
-//  Pangan-an    10.2208, 124.0398  PhilAtlas PSA — was 124.0122, fixed 3.2 km
-//  Olango       10.2515, 124.0566  PhilAtlas Sabang brgy on Olango — was 10.2325, fixed 3.1 km
-//  Gilutongan   10.2065, 123.9891  OSM way 64494667 — confirmed
-//  Nalusuan     10.1877, 124.0003  latitude.to/Wikipedia — confirmed
-//  Caohagan     10.2028, 124.0194  Wikidata Q11293940 / GNS -2420588: 10°12'10"N,124°1'10"E
-//               was 10.2732, 124.0336 — 8+ km off! pointing to open water
-//  Sulpa        10.2375, 124.0111  Wikidata Q31830998 / GNS -2454312: 10°14'15"N,124°0'40"E
-//               was 10.2398, 124.0009 — 0.7 km off
-//  Pandanon     10.17875,124.08154 OSM way 149850025 / GeoNames 1695503 / Wikidata Q31828038
-//               was 10.2169, 124.1687 — 9 km off!
-//  Camotes      10.6347, 124.3014  PhilAtlas PSA Consuelo brgy (Pacijan island)
-//               was 10.6508, 124.3484 — 5 km off, wrong island
-//  Getafe       10.1454, 124.1588  PhilAtlas Poblacion Getafe (port/town center)
-//               was 10.1727, 124.358 — 22 km off!
-// ─────────────────────────────────────────────────────────────────────────────
-
+// ─── DATA ─────────────────────────────────────────────────────────────────────
 export const PORTS: Location[] = [
   {
     id: "marigondon",
@@ -165,18 +147,6 @@ export const ISLANDS: Location[] = [
 export const ALL_LOCATIONS: Location[] = [...PORTS, ...ISLANDS];
 
 // ─── SEA ROUTE WAYPOINTS ─────────────────────────────────────────────────────
-//
-// Straight-line routing passes through land (Mactan, Olango, Cordova reefs).
-// These named open-water checkpoints reflect actual bangka boat corridors.
-//
-// Sources:
-//   • Hilutangan Channel: Wikipedia/Grokipedia — 10°13'–10°16'N, 124°02'–124°04'E
-//   • Real tour itineraries: TravelMark, WanderEra, GetYourGuide, BradTours
-//   • Olango Channel (east of Olango toward Pandanon/Bohol)
-//
-// Routes keyed as "depId→arrId". Reverse lookups auto-reverse waypoints.
-// ─────────────────────────────────────────────────────────────────────────────
-
 interface SeaWaypoint {
   lat: number;
   lng: number;
@@ -184,37 +154,22 @@ interface SeaWaypoint {
 }
 
 const WP: Record<string, SeaWaypoint> = {
-  // Hilutangan Channel (between Mactan east coast & Olango west coast)
-  // Channel: 10°13'–10°16'N, 124°02'–124°04'E (Wikipedia/Grokipedia)
-  hch_n:   { lat: 10.300, lng: 124.028, label: "Hilutangan Ch. N entry" },
-  hch_mid: { lat: 10.272, lng: 124.030, label: "Hilutangan Ch. centre" },
-  hch_s:   { lat: 10.230, lng: 124.015, label: "Hilutangan Ch. S exit" },
-
-  // Marigondon SE exit — avoids Mactan SE reef corner
-  mar_exit: { lat: 10.262, lng: 124.002, label: "Marigondon SE exit" },
-
-  // South clearance below Nalusuan / Cordova reefs
+  hch_n:         { lat: 10.300, lng: 124.028, label: "Hilutangan Ch. N entry" },
+  hch_mid:       { lat: 10.272, lng: 124.030, label: "Hilutangan Ch. centre" },
+  hch_s:         { lat: 10.230, lng: 124.015, label: "Hilutangan Ch. S exit" },
+  mar_exit:      { lat: 10.262, lng: 124.002, label: "Marigondon SE exit" },
   cordova_clear: { lat: 10.195, lng: 124.005, label: "Cordova reef clearance" },
-
-  // Olango Channel — open water east of Olango toward Pandanon / Bohol
-  olango_e: { lat: 10.225, lng: 124.090, label: "Olango Channel E" },
-
-  // Pandanon approach (Danajon Bank, north of sandbar island)
-  pandanon_sw: { lat: 10.185, lng: 124.070, label: "Pandanon SW" },
-  pandanon_n:  { lat: 10.190, lng: 124.082, label: "Pandanon N approach" },
-
-  // Bohol Strait approach toward Getafe (NW Bohol coast)
-  bohol_1: { lat: 10.190, lng: 124.110, label: "Bohol Strait W" },
-  bohol_2: { lat: 10.165, lng: 124.140, label: "Bohol Strait mid" },
-
-  // Camotes Sea — heading NE toward Pacijan / Consuelo
-  cam_s:   { lat: 10.350, lng: 124.055, label: "Camotes Sea S" },
-  cam_mid: { lat: 10.450, lng: 124.150, label: "Camotes Sea mid" },
-  cam_n:   { lat: 10.560, lng: 124.250, label: "Camotes Sea N" },
+  olango_e:      { lat: 10.225, lng: 124.090, label: "Olango Channel E" },
+  pandanon_sw:   { lat: 10.185, lng: 124.070, label: "Pandanon SW" },
+  pandanon_n:    { lat: 10.190, lng: 124.082, label: "Pandanon N approach" },
+  bohol_1:       { lat: 10.190, lng: 124.110, label: "Bohol Strait W" },
+  bohol_2:       { lat: 10.165, lng: 124.140, label: "Bohol Strait mid" },
+  cam_s:         { lat: 10.350, lng: 124.055, label: "Camotes Sea S" },
+  cam_mid:       { lat: 10.450, lng: 124.150, label: "Camotes Sea mid" },
+  cam_n:         { lat: 10.560, lng: 124.250, label: "Camotes Sea N" },
 };
 
 const SEA_ROUTE_WAYPOINTS: Record<string, SeaWaypoint[]> = {
-  // ── From Angasil ───────────────────────────────────────────────────────────
   "angasil→olango":     [WP.hch_n, WP.hch_mid],
   "angasil→pangan_an":  [WP.hch_n, WP.hch_mid, WP.hch_s],
   "angasil→gilutongan": [WP.hch_n, WP.hch_mid, WP.hch_s],
@@ -225,7 +180,6 @@ const SEA_ROUTE_WAYPOINTS: Record<string, SeaWaypoint[]> = {
   "angasil→getafe":     [WP.hch_n, WP.hch_mid, WP.olango_e, WP.bohol_1, WP.bohol_2],
   "angasil→camotes":    [WP.hch_n, WP.cam_s, WP.cam_mid, WP.cam_n],
 
-  // ── From Hilton / Punta Engaño ─────────────────────────────────────────────
   "hilton→olango":     [WP.hch_n, WP.hch_mid],
   "hilton→pangan_an":  [WP.hch_n, WP.hch_mid, WP.hch_s],
   "hilton→gilutongan": [WP.hch_n, WP.hch_mid, WP.hch_s],
@@ -236,7 +190,6 @@ const SEA_ROUTE_WAYPOINTS: Record<string, SeaWaypoint[]> = {
   "hilton→getafe":     [WP.hch_mid, WP.olango_e, WP.bohol_1, WP.bohol_2],
   "hilton→camotes":    [WP.cam_s, WP.cam_mid, WP.cam_n],
 
-  // ── From Marigondon ────────────────────────────────────────────────────────
   "marigondon→olango":     [WP.mar_exit, WP.hch_mid],
   "marigondon→pangan_an":  [WP.mar_exit, WP.hch_mid, WP.hch_s],
   "marigondon→gilutongan": [WP.mar_exit, WP.hch_s],
@@ -248,30 +201,19 @@ const SEA_ROUTE_WAYPOINTS: Record<string, SeaWaypoint[]> = {
   "marigondon→camotes":    [WP.mar_exit, WP.cam_s, WP.cam_mid, WP.cam_n],
 };
 
-function getSeaRoute(
-  depId: string,
-  arrId: string
-): Array<{ lat: number; lng: number }> {
+function getSeaRoute(depId: string, arrId: string): Array<{ lat: number; lng: number }> {
   const key = `${depId}→${arrId}`;
   const reverseKey = `${arrId}→${depId}`;
   const dep = ALL_LOCATIONS.find((l) => l.id === depId)!;
   const arr = ALL_LOCATIONS.find((l) => l.id === arrId)!;
   const waypoints =
     SEA_ROUTE_WAYPOINTS[key] ??
-    (SEA_ROUTE_WAYPOINTS[reverseKey]
-      ? [...SEA_ROUTE_WAYPOINTS[reverseKey]].reverse()
-      : []);
+    (SEA_ROUTE_WAYPOINTS[reverseKey] ? [...SEA_ROUTE_WAYPOINTS[reverseKey]].reverse() : []);
   return [dep, ...waypoints, arr];
 }
 
 // ─── GEOMETRY ─────────────────────────────────────────────────────────────────
-
-function haversine(
-  lat1: number,
-  lng1: number,
-  lat2: number,
-  lng2: number
-): number {
+function haversine(lat1: number, lng1: number, lat2: number, lng2: number): number {
   const R = 6371;
   const dLat = ((lat2 - lat1) * Math.PI) / 180;
   const dLng = ((lng2 - lng1) * Math.PI) / 180;
@@ -283,13 +225,6 @@ function haversine(
   return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }
 
-/**
- * Minimum distance (km) from point P to a multi-segment sea route.
- *
- * Uses equirectangular projection (cosLat-scaled) so that 1° longitude ≠ 1°
- * latitude in the parametric t calculation. At 10°N the error without scaling
- * is ~1.3%, enough to misrank islands 200–400 m apart on diagonal routes.
- */
 function pointToRouteSegmentsDist(
   pLat: number,
   pLng: number,
@@ -297,21 +232,16 @@ function pointToRouteSegmentsDist(
 ): number {
   let minDist = Infinity;
   const cosLat = Math.cos((pLat * Math.PI) / 180);
-
   for (let i = 0; i < routePoints.length - 1; i++) {
     const a = routePoints[i];
     const b = routePoints[i + 1];
-
-    // Project to km offsets centred on P
     const ax = (a.lng - pLng) * cosLat * 111.32;
     const ay = (a.lat - pLat) * 111.0;
     const bx = (b.lng - pLng) * cosLat * 111.32;
     const by = (b.lat - pLat) * 111.0;
-
     const dx = bx - ax;
     const dy = by - ay;
     const lenSq = dx * dx + dy * dy;
-
     let distKm: number;
     if (lenSq < 1e-12) {
       distKm = Math.sqrt(ax * ax + ay * ay);
@@ -321,14 +251,22 @@ function pointToRouteSegmentsDist(
       const cy = ay + t * dy;
       distKm = Math.sqrt(cx * cx + cy * cy);
     }
-
     if (distKm < minDist) minDist = distKm;
   }
   return minDist;
 }
 
-// ─── COMPONENT ────────────────────────────────────────────────────────────────
+// ─── RANK CONFIGS (white-background friendly) ─────────────────────────────────
+const RANK_CONFIG = [
+  { badgeBg: "#fee2e2", badgeText: "#991b1b", border: "#fca5a5", activeBorder: "#ef4444", cardBg: "#fff5f5", label: "CLOSEST" },
+  { badgeBg: "#fff7ed", badgeText: "#9a3412", border: "#fed7aa", activeBorder: "#f97316", cardBg: "#fffbf5", label: "2ND"     },
+  { badgeBg: "#fefce8", badgeText: "#854d0e", border: "#fde68a", activeBorder: "#eab308", cardBg: "#fffef5", label: "3RD"     },
+  { badgeBg: "#eff6ff", badgeText: "#1e40af", border: "#bfdbfe", activeBorder: "#3b82f6", cardBg: "#f8faff", label: "#4"      },
+  { badgeBg: "#eff6ff", badgeText: "#1e40af", border: "#bfdbfe", activeBorder: "#3b82f6", cardBg: "#f8faff", label: "#5"      },
+  { badgeBg: "#eff6ff", badgeText: "#1e40af", border: "#bfdbfe", activeBorder: "#3b82f6", cardBg: "#f8faff", label: "#6"      },
+];
 
+// ─── COMPONENT ────────────────────────────────────────────────────────────────
 export default function NearestIslandRecommendation() {
   const mapContainer = useRef<HTMLDivElement>(null);
   const mapRef = useRef<any>(null);
@@ -337,47 +275,40 @@ export default function NearestIslandRecommendation() {
   const [depId, setDepId] = useState<string>(PORTS[0].id);
   const [arrId, setArrId] = useState<string>(ISLANDS[0].id);
   const [mapLoaded, setMapLoaded] = useState(false);
+  const [emergencyMode, setEmergencyMode] = useState(false);
+  const [selectedEmergencyId, setSelectedEmergencyId] = useState<string | null>(null);
 
   const dep = useMemo(() => PORTS.find((p) => p.id === depId)!, [depId]);
-  const arr = useMemo(
-    () => ALL_LOCATIONS.find((p) => p.id === arrId)!,
-    [arrId]
-  );
+  const arr = useMemo(() => ALL_LOCATIONS.find((p) => p.id === arrId)!, [arrId]);
 
-  const seaRoute = useMemo(
-    () => getSeaRoute(depId, arrId),
-    [depId, arrId]
-  );
+  const activeArrId = emergencyMode && selectedEmergencyId ? selectedEmergencyId : arrId;
+  const activeArr = useMemo(() => ALL_LOCATIONS.find((p) => p.id === activeArrId)!, [activeArrId]);
+
+  const seaRoute = useMemo(() => getSeaRoute(depId, activeArrId), [depId, activeArrId]);
 
   const routeDist = useMemo(() => {
     let total = 0;
     for (let i = 0; i < seaRoute.length - 1; i++) {
-      total += haversine(
-        seaRoute[i].lat, seaRoute[i].lng,
-        seaRoute[i + 1].lat, seaRoute[i + 1].lng
-      );
+      total += haversine(seaRoute[i].lat, seaRoute[i].lng, seaRoute[i + 1].lat, seaRoute[i + 1].lng);
     }
     return total;
   }, [seaRoute]);
 
-  const travelMins = useMemo(
-    () => Math.round((routeDist / 12) * 60),
-    [routeDist]
-  );
+  const travelMins = useMemo(() => Math.round((routeDist / 12) * 60), [routeDist]);
 
   const candidates = useMemo(() => {
-    return ALL_LOCATIONS.filter((p) => p.id !== depId && p.id !== arrId)
+    return ALL_LOCATIONS.filter((p) => p.id !== depId && p.id !== activeArrId)
       .map((p) => ({
         ...p,
         dist: pointToRouteSegmentsDist(p.lat, p.lng, seaRoute),
         distFromDep: haversine(p.lat, p.lng, dep.lat, dep.lng),
-        distFromArr: haversine(p.lat, p.lng, arr.lat, arr.lng),
+        distFromArr: haversine(p.lat, p.lng, activeArr.lat, activeArr.lng),
       }))
       .sort((a, b) => a.dist - b.dist)
       .slice(0, 6);
-  }, [dep, arr, depId, arrId, seaRoute]);
+  }, [dep, activeArr, depId, activeArrId, seaRoute]);
 
-  // ── Map bootstrap ─────────────────────────────────────────────────────────
+  // ── Map bootstrap ──────────────────────────────────────────────────────────
   useEffect(() => {
     if ((window as any).mapboxgl) { initMap(); return; }
     const link = document.createElement("link");
@@ -412,7 +343,7 @@ export default function NearestIslandRecommendation() {
     } else {
       renderRoute();
     }
-  }, [mapLoaded, dep, arr, candidates, seaRoute]);
+  }, [mapLoaded, dep, activeArr, candidates, seaRoute, emergencyMode, selectedEmergencyId]);
 
   function clearMarkers() {
     markersRef.current.forEach((m) => m.remove());
@@ -427,52 +358,57 @@ export default function NearestIslandRecommendation() {
 
     clearMarkers();
 
-    ["route-line", "nearest-line"].forEach((id) => {
-      try { if (map.getLayer(id)) map.removeLayer(id); } catch (_) {}
-    });
-    ["route-src", "nearest-src"].forEach((id) => {
-      try { if (map.getSource(id)) map.removeSource(id); } catch (_) {}
-    });
+    const allLayerIds = ["route-line", ...Array.from({ length: 6 }, (_, i) => `nearest-line-${i}`)];
+    const allSourceIds = ["route-src", ...Array.from({ length: 6 }, (_, i) => `nearest-src-${i}`)];
+    allLayerIds.forEach((id) => { try { if (map.getLayer(id)) map.removeLayer(id); } catch (_) {} });
+    allSourceIds.forEach((id) => { try { if (map.getSource(id)) map.removeSource(id); } catch (_) {} });
 
-    // Blue dashed sea-route polyline
+    const routeColor = emergencyMode ? "#dc2626" : "#2563eb";
+
     map.addSource("route-src", {
       type: "geojson",
       data: {
         type: "Feature",
-        geometry: {
-          type: "LineString",
-          coordinates: seaRoute.map((p) => [p.lng, p.lat]),
-        },
+        geometry: { type: "LineString", coordinates: seaRoute.map((p) => [p.lng, p.lat]) },
       },
     });
     map.addLayer({
       id: "route-line",
       type: "line",
       source: "route-src",
-      paint: { "line-color": "#1D6FE8", "line-width": 3, "line-dasharray": [2, 1.5] },
+      paint: {
+        "line-color": routeColor,
+        "line-width": emergencyMode ? 4 : 3,
+        "line-dasharray": emergencyMode ? [1.5, 1] : [2, 1.5],
+      },
     });
 
-    // Orange dashed line to nearest island
-    if (candidates.length > 0) {
-      const nearest = candidates[0];
+    // Dashed indicator lines for top 3
+    const indicatorColors = ["#dc2626", "#ea580c", "#ca8a04"];
+    candidates.slice(0, 3).forEach((nearest, i) => {
       const mid = seaRoute[Math.floor(seaRoute.length / 2)];
-      map.addSource("nearest-src", {
+      const srcId = `nearest-src-${i}`;
+      const layId = `nearest-line-${i}`;
+      try { if (map.getLayer(layId)) map.removeLayer(layId); } catch (_) {}
+      try { if (map.getSource(srcId)) map.removeSource(srcId); } catch (_) {}
+      map.addSource(srcId, {
         type: "geojson",
         data: {
           type: "Feature",
-          geometry: {
-            type: "LineString",
-            coordinates: [[mid.lng, mid.lat], [nearest.lng, nearest.lat]],
-          },
+          geometry: { type: "LineString", coordinates: [[mid.lng, mid.lat], [nearest.lng, nearest.lat]] },
         },
       });
       map.addLayer({
-        id: "nearest-line",
+        id: layId,
         type: "line",
-        source: "nearest-src",
-        paint: { "line-color": "#E85B1D", "line-width": 2, "line-dasharray": [3, 2] },
+        source: srcId,
+        paint: {
+          "line-color": indicatorColors[i],
+          "line-width": i === 0 ? 2.5 : 1.5,
+          "line-dasharray": [3, 2],
+        },
       });
-    }
+    });
 
     function addMarker(el: HTMLElement, lng: number, lat: number, anchor = "bottom") {
       markersRef.current.push(
@@ -480,59 +416,76 @@ export default function NearestIslandRecommendation() {
       );
     }
 
-    // Departure (blue)
+    // Departure marker
     const depEl = document.createElement("div");
     depEl.innerHTML = `
-      <div style="display:flex;flex-direction:column;align-items:center">
-        <div style="background:#1D6FE8;color:#fff;font-size:11px;font-weight:600;
-                    padding:4px 8px;border-radius:6px;white-space:nowrap;
-                    box-shadow:0 2px 8px rgba(29,111,232,.35);margin-bottom:4px">
-          ${dep.name.split("(")[0].trim()}
+      <div style="display:flex;flex-direction:column;align-items:center;cursor:default">
+        <div style="background:#1d4ed8;color:#fff;font-size:11px;font-weight:600;
+                    padding:4px 9px;border-radius:6px;white-space:nowrap;
+                    box-shadow:0 2px 6px rgba(37,99,235,.35);margin-bottom:4px">
+          ⚓ ${dep.name.split("(")[0].trim()}
         </div>
-        <div style="width:14px;height:14px;border-radius:50%;
-                    background:#1D6FE8;border:2.5px solid #fff"></div>
+        <div style="width:13px;height:13px;border-radius:50%;background:#2563eb;border:2.5px solid #fff;box-shadow:0 1px 4px rgba(37,99,235,.4)"></div>
       </div>`;
     addMarker(depEl, dep.lng, dep.lat);
 
-    // Arrival (green)
+    // Arrival marker
+    const isEmergDest = emergencyMode && selectedEmergencyId;
     const arrEl = document.createElement("div");
     arrEl.innerHTML = `
-      <div style="display:flex;flex-direction:column;align-items:center">
-        <div style="background:#16A34A;color:#fff;font-size:11px;font-weight:600;
-                    padding:4px 8px;border-radius:6px;white-space:nowrap;
-                    box-shadow:0 2px 8px rgba(22,163,74,.35);margin-bottom:4px">
-          ${arr.name.split("(")[0].trim()}
+      <div style="display:flex;flex-direction:column;align-items:center;cursor:default">
+        <div style="background:${isEmergDest ? "#dc2626" : "#16a34a"};color:#fff;font-size:11px;font-weight:700;
+                    padding:4px 9px;border-radius:6px;white-space:nowrap;
+                    box-shadow:0 2px 6px rgba(0,0,0,.2);margin-bottom:4px">
+          ${isEmergDest ? "🆘" : "🟢"} ${activeArr.name.split("(")[0].trim()}
         </div>
         <div style="width:14px;height:14px;border-radius:50%;
-                    background:#16A34A;border:2.5px solid #fff"></div>
+                    background:${isEmergDest ? "#dc2626" : "#16a34a"};border:2.5px solid #fff;
+                    box-shadow:0 1px 4px rgba(0,0,0,.2)"></div>
       </div>`;
-    addMarker(arrEl, arr.lng, arr.lat);
+    addMarker(arrEl, activeArr.lng, activeArr.lat);
 
-    // Candidate islands
-    candidates.forEach((isl, i) => {
-      const isNearest = i === 0;
+    // Top-3 map icons with colored labels
+    const top3Styles = [
+      { bg: "#dc2626", text: "#fff", dot: "#dc2626", emoji: emergencyMode ? "🆘" : "🔴" },
+      { bg: "#ea580c", text: "#fff", dot: "#ea580c", emoji: emergencyMode ? "⚠️" : "🟠" },
+      { bg: "#ca8a04", text: "#fff", dot: "#ca8a04", emoji: emergencyMode ? "⚑" : "🟡" },
+    ];
+    candidates.slice(0, 3).forEach((isl, i) => {
+      const s = top3Styles[i];
+      const isSelected = selectedEmergencyId === isl.id && emergencyMode;
       const el = document.createElement("div");
-      el.innerHTML = isNearest
-        ? `<div style="display:flex;flex-direction:column;align-items:center">
-             <div style="background:#E85B1D;color:#fff;font-size:11px;font-weight:700;
-                         padding:4px 10px;border-radius:6px;white-space:nowrap;
-                         box-shadow:0 2px 8px rgba(232,91,29,.45);margin-bottom:4px">
-               ⚓ ${isl.name.split("(")[0].trim()}
-             </div>
-             <div style="width:16px;height:16px;border-radius:50%;
-                         background:#E85B1D;border:3px solid #fff"></div>
-           </div>`
-        : `<div title="${isl.name}"
-               style="width:10px;height:10px;border-radius:50%;
-                      background:#94A3B8;border:2px solid #fff;cursor:pointer"></div>`;
-      addMarker(el, isl.lng, isl.lat, isNearest ? "bottom" : "center");
+      el.style.cursor = "pointer";
+      el.innerHTML = `
+        <div style="display:flex;flex-direction:column;align-items:center">
+          <div style="background:${s.bg};color:${s.text};font-size:11px;font-weight:700;
+                      padding:4px 9px;border-radius:6px;white-space:nowrap;
+                      box-shadow:0 2px 6px rgba(0,0,0,.25);margin-bottom:4px;
+                      ${isSelected ? "outline:2.5px solid #fff;outline-offset:1px;" : ""}">
+            ${s.emoji} #${i + 1} ${isl.name.split("(")[0].trim()}
+          </div>
+          <div style="width:${i === 0 ? 14 : 11}px;height:${i === 0 ? 14 : 11}px;border-radius:50%;
+                      background:${s.dot};border:2.5px solid #fff;
+                      box-shadow:0 1px 4px rgba(0,0,0,.2)"></div>
+        </div>`;
+      el.addEventListener("click", () => handleIslandClick(isl.id));
+      addMarker(el, isl.lng, isl.lat);
     });
 
-    // Waypoint dots (small light blue)
+    // Candidates 4–6: small gray dots
+    candidates.slice(3, 6).forEach((isl) => {
+      const el = document.createElement("div");
+      el.style.cursor = "pointer";
+      el.title = isl.name;
+      el.innerHTML = `<div style="width:9px;height:9px;border-radius:50%;background:#94a3b8;border:2px solid #fff;box-shadow:0 1px 3px rgba(0,0,0,.15)"></div>`;
+      el.addEventListener("click", () => handleIslandClick(isl.id));
+      addMarker(el, isl.lng, isl.lat, "center");
+    });
+
+    // Waypoint dots
     seaRoute.slice(1, -1).forEach((wp) => {
       const el = document.createElement("div");
-      el.style.cssText =
-        "width:6px;height:6px;border-radius:50%;background:#93C5FD;border:1px solid #fff;opacity:0.8";
+      el.style.cssText = `width:5px;height:5px;border-radius:50%;background:${emergencyMode ? "#fca5a5" : "#93c5fd"};border:1px solid #fff;opacity:0.8`;
       addMarker(el, wp.lng, wp.lat, "center");
     });
 
@@ -547,30 +500,169 @@ export default function NearestIslandRecommendation() {
     }
   }
 
+  function handleIslandClick(id: string) {
+    if (emergencyMode) {
+      setSelectedEmergencyId((prev) => (prev === id ? null : id));
+    } else {
+      setArrId(id);
+    }
+  }
+
+  function toggleEmergencyMode() {
+    setEmergencyMode((prev) => {
+      if (prev) setSelectedEmergencyId(null);
+      return !prev;
+    });
+  }
+
   const arrOptions = ALL_LOCATIONS.filter((l) => l.id !== depId);
 
+  const topLabel = (i: number) => {
+    if (i === 0) return "CLOSEST";
+    if (i === 1) return "2ND";
+    if (i === 2) return "3RD";
+    return `#${i + 1}`;
+  };
+
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 to-slate-100">
-      {/* Header */}
-      <div className="bg-white border-b border-slate-200 sticky top-0 z-40 shadow-sm">
-        <div className="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8 py-4 sm:py-6">
-          <h1 className="text-2xl sm:text-3xl font-bold text-slate-900">
-            Ferry Route · Nearest Island Finder
-          </h1>
-          <p className="text-slate-500 mt-1 text-sm">
-            Lapu-Lapu City, Cebu — fully verified coordinates · sea-aware routing
-          </p>
+    <div
+      className="min-h-screen"
+      style={{ background: emergencyMode ? "#fff5f5" : "#f1f5f9" }}
+    >
+      <style>{`
+        @keyframes emergPulse { 0%,100%{opacity:1} 50%{opacity:0.45} }
+        @keyframes borderBlink { 0%,100%{border-color:#fca5a5;box-shadow:0 0 0 3px #fee2e2} 50%{border-color:#ef4444;box-shadow:0 0 0 3px #fecaca} }
+        @keyframes stripeBg { 0%{background-position:0 0} 100%{background-position:40px 0} }
+        .emerg-stripe {
+          background: repeating-linear-gradient(-45deg, #fee2e2 0px, #fee2e2 8px, #fef2f2 8px, #fef2f2 16px);
+          animation: stripeBg 1s linear infinite;
+        }
+        .emerg-blink-border { animation: borderBlink 1.2s ease-in-out infinite; }
+      `}</style>
+
+      {/* ── HEADER ─────────────────────────────────────────────────────────── */}
+      <div
+        style={{
+          background: "#ffffff",
+          borderBottom: emergencyMode ? "2px solid #fca5a5" : "1px solid #e2e8f0",
+          position: "sticky",
+          top: 0,
+          zIndex: 50,
+          boxShadow: "0 1px 4px rgba(0,0,0,0.07)",
+        }}
+      >
+        {emergencyMode && (
+          <div
+            className="emerg-stripe"
+            style={{
+              padding: "7px 20px",
+              display: "flex",
+              alignItems: "center",
+              gap: 10,
+              fontSize: "12px",
+              fontWeight: 700,
+              color: "#991b1b",
+              letterSpacing: "0.06em",
+            }}
+          >
+            <AlertTriangle size={14} style={{ animation: "emergPulse 0.8s ease-in-out infinite" }} />
+            EMERGENCY DIVERSION ACTIVE — SELECT NEAREST SAFE HARBOR BELOW
+            <AlertTriangle size={14} style={{ animation: "emergPulse 0.8s ease-in-out infinite" }} />
+          </div>
+        )}
+
+        <div
+          style={{
+            maxWidth: 1100,
+            margin: "0 auto",
+            padding: "14px 20px",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            flexWrap: "wrap",
+            gap: 12,
+          }}
+        >
+          <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+            {emergencyMode
+              ? <LifeBuoy size={26} color="#dc2626" />
+              : <Anchor size={26} color="#2563eb" />
+            }
+            <div>
+              <h1
+                style={{
+                  fontSize: "19px",
+                  fontWeight: 700,
+                  color: emergencyMode ? "#991b1b" : "#0f172a",
+                  letterSpacing: "-0.01em",
+                }}
+              >
+                {emergencyMode ? "Emergency Island Finder" : "Ferry Route · Nearest Island Finder"}
+              </h1>
+              <p style={{ fontSize: "12px", color: emergencyMode ? "#ef4444" : "#64748b", marginTop: 1 }}>
+                {emergencyMode
+                  ? "Sea-aware routing · Tap any island to divert · Mactan, Cebu"
+                  : "Lapu-Lapu City, Cebu — verified coordinates · sea-aware routing"}
+              </p>
+            </div>
+          </div>
+
+          <button
+            onClick={toggleEmergencyMode}
+            style={{
+              background: emergencyMode ? "#fef2f2" : "#ffffff",
+              color: emergencyMode ? "#dc2626" : "#475569",
+              border: `1.5px solid ${emergencyMode ? "#fca5a5" : "#cbd5e1"}`,
+              borderRadius: 8,
+              padding: "8px 16px",
+              fontSize: "12px",
+              fontWeight: 700,
+              cursor: "pointer",
+              letterSpacing: "0.03em",
+              display: "flex",
+              alignItems: "center",
+              gap: 7,
+              transition: "all 0.2s",
+              boxShadow: emergencyMode ? "0 0 0 3px #fee2e2" : "0 1px 3px rgba(0,0,0,0.06)",
+            }}
+          >
+            {emergencyMode
+              ? <><Shield size={13} /> Cancel Emergency</>
+              : <><AlertTriangle size={13} /> Emergency Mode</>
+            }
+          </button>
         </div>
       </div>
 
-      <div className="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8 py-6 space-y-5">
+      <div style={{ maxWidth: 1100, margin: "0 auto", padding: "20px 16px", display: "flex", flexDirection: "column", gap: 16 }}>
 
-        {/* Selectors */}
-        <div className="bg-white rounded-xl border border-slate-200 p-4 sm:p-5 shadow-sm">
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        {/* ── SELECTORS ──────────────────────────────────────────────────────── */}
+        <div
+          style={{
+            background: "#ffffff",
+            border: emergencyMode ? "1.5px solid #fca5a5" : "1px solid #e2e8f0",
+            borderRadius: 12,
+            padding: "16px 18px",
+            boxShadow: "0 1px 3px rgba(0,0,0,0.06)",
+          }}
+          className={emergencyMode ? "emerg-blink-border" : ""}
+        >
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
             <div>
-              <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wide mb-2">
-                Departure Port
+              <label
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 5,
+                  fontSize: "11px",
+                  fontWeight: 700,
+                  color: "#2563eb",
+                  letterSpacing: "0.08em",
+                  textTransform: "uppercase" as const,
+                  marginBottom: 6,
+                }}
+              >
+                <Navigation size={10} /> Departure Port
               </label>
               <select
                 value={depId}
@@ -581,142 +673,419 @@ export default function NearestIslandRecommendation() {
                     const fallback = ALL_LOCATIONS.find((l) => l.id !== newDep);
                     if (fallback) setArrId(fallback.id);
                   }
+                  setSelectedEmergencyId(null);
                 }}
-                className="w-full px-3 py-2.5 rounded-lg border-2 border-blue-200 bg-white
-                           text-slate-800 font-medium focus:outline-none focus:border-blue-500
-                           transition-colors text-sm"
+                style={{
+                  width: "100%",
+                  background: "#f8fafc",
+                  color: "#1e3a5f",
+                  border: "1.5px solid #bfdbfe",
+                  borderRadius: 7,
+                  padding: "8px 10px",
+                  fontSize: "13px",
+                  fontWeight: 500,
+                  cursor: "pointer",
+                  outline: "none",
+                }}
               >
-                {PORTS.map((p) => (
-                  <option key={p.id} value={p.id}>{p.name}</option>
-                ))}
+                {PORTS.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
               </select>
             </div>
+
             <div>
-              <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wide mb-2">
-                Arrival Island / Port
+              <label
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 5,
+                  fontSize: "11px",
+                  fontWeight: 700,
+                  color: emergencyMode ? "#dc2626" : "#16a34a",
+                  letterSpacing: "0.08em",
+                  textTransform: "uppercase" as const,
+                  marginBottom: 6,
+                }}
+              >
+                <MapPin size={10} />
+                {emergencyMode && selectedEmergencyId ? "Emergency Dest (overridden)" : "Arrival Island / Port"}
               </label>
               <select
                 value={arrId}
-                onChange={(e) => setArrId(e.target.value)}
-                className="w-full px-3 py-2.5 rounded-lg border-2 border-green-200 bg-white
-                           text-slate-800 font-medium focus:outline-none focus:border-green-500
-                           transition-colors text-sm"
+                onChange={(e) => { setArrId(e.target.value); setSelectedEmergencyId(null); }}
+                disabled={!!(emergencyMode && selectedEmergencyId)}
+                style={{
+                  width: "100%",
+                  background: emergencyMode && selectedEmergencyId ? "#f8fafc" : "#f8fafc",
+                  color: emergencyMode && selectedEmergencyId ? "#94a3b8" : emergencyMode ? "#991b1b" : "#14532d",
+                  border: `1.5px solid ${emergencyMode && selectedEmergencyId ? "#e2e8f0" : emergencyMode ? "#fca5a5" : "#bbf7d0"}`,
+                  borderRadius: 7,
+                  padding: "8px 10px",
+                  fontSize: "13px",
+                  fontWeight: 500,
+                  cursor: emergencyMode && selectedEmergencyId ? "not-allowed" : "pointer",
+                  outline: "none",
+                  opacity: emergencyMode && selectedEmergencyId ? 0.55 : 1,
+                }}
               >
-                {arrOptions.map((p) => (
-                  <option key={p.id} value={p.id}>{p.name}</option>
-                ))}
+                {arrOptions.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
               </select>
             </div>
           </div>
 
-          <div className="flex flex-wrap gap-4 mt-4 pt-4 border-t border-slate-100">
+          {/* Emergency override banner */}
+          {emergencyMode && selectedEmergencyId && (
+            <div
+              style={{
+                marginTop: 12,
+                background: "#fef2f2",
+                border: "1.5px solid #fca5a5",
+                borderRadius: 8,
+                padding: "9px 14px",
+                display: "flex",
+                alignItems: "center",
+                gap: 10,
+              }}
+            >
+              <Siren size={15} color="#dc2626" style={{ animation: "emergPulse 0.9s ease-in-out infinite", flexShrink: 0 }} />
+              <span style={{ fontSize: "13px", fontWeight: 700, color: "#991b1b" }}>
+                Diverting to: {ALL_LOCATIONS.find((l) => l.id === selectedEmergencyId)?.name}
+              </span>
+              <button
+                onClick={() => setSelectedEmergencyId(null)}
+                style={{
+                  marginLeft: "auto",
+                  background: "#fff",
+                  border: "1px solid #fca5a5",
+                  color: "#dc2626",
+                  borderRadius: 5,
+                  padding: "4px 12px",
+                  fontSize: "11px",
+                  fontWeight: 700,
+                  cursor: "pointer",
+                }}
+              >
+                Cancel
+              </button>
+            </div>
+          )}
+
+          {/* Legend */}
+          <div
+            style={{
+              display: "flex",
+              flexWrap: "wrap",
+              gap: 12,
+              marginTop: 14,
+              paddingTop: 12,
+              borderTop: "1px solid #f1f5f9",
+            }}
+          >
             {[
-              { color: "bg-blue-600",   label: "Departure port" },
-              { color: "bg-green-600",  label: "Arrival" },
-              { color: "bg-orange-500", label: "Nearest island (recommended)" },
-              { color: "bg-slate-400",  label: "Other islands" },
-              { color: "bg-blue-200",   label: "Sea-route waypoint" },
+              { color: emergencyMode ? "#dc2626" : "#2563eb", label: "Route line" },
+              { color: "#2563eb",  label: "Departure" },
+              { color: emergencyMode ? "#dc2626" : "#16a34a", label: "Destination" },
+              { color: "#dc2626",  label: "Nearest (#1)" },
+              { color: "#ea580c",  label: "2nd closest" },
+              { color: "#ca8a04",  label: "3rd closest" },
+              { color: "#94a3b8",  label: "Other islands" },
             ].map(({ color, label }) => (
-              <div key={label} className="flex items-center gap-2">
-                <div className={`w-3 h-3 rounded-full ${color}`} />
-                <span className="text-xs text-slate-500 font-medium">{label}</span>
+              <div key={label} style={{ display: "flex", alignItems: "center", gap: 5 }}>
+                <div style={{ width: 8, height: 8, borderRadius: "50%", background: color }} />
+                <span style={{ fontSize: "11px", color: "#64748b" }}>{label}</span>
               </div>
             ))}
           </div>
         </div>
 
-        {/* Map */}
+        {/* ── MAP ────────────────────────────────────────────────────────────── */}
         <div
-          ref={mapContainer}
-          className="w-full rounded-xl border border-slate-200 shadow-sm overflow-hidden"
-          style={{ height: 420 }}
-        />
+          style={{
+            position: "relative",
+            borderRadius: 12,
+            overflow: "hidden",
+            border: emergencyMode ? "2px solid #fca5a5" : "1px solid #e2e8f0",
+            boxShadow: emergencyMode
+              ? "0 0 0 3px #fee2e2, 0 2px 8px rgba(0,0,0,0.07)"
+              : "0 2px 8px rgba(0,0,0,0.06)",
+          }}
+        >
+          <div ref={mapContainer} style={{ width: "100%", height: 440 }} />
 
-        {/* Route stats */}
-        <div className="bg-white rounded-xl border border-slate-200 p-4 shadow-sm">
-          <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-3">
-            Route Info
-          </p>
-          <div className="flex flex-wrap gap-8">
-            <div>
-              <span className="text-xs text-slate-400 block mb-0.5">Sea route distance</span>
-              <span className="text-sm font-semibold text-slate-800">{routeDist.toFixed(1)} km</span>
+          {emergencyMode && (
+            <div
+              style={{
+                position: "absolute",
+                top: 10,
+                left: 10,
+                background: "rgba(255,255,255,0.94)",
+                border: "1.5px solid #fca5a5",
+                borderRadius: 7,
+                padding: "6px 11px",
+                fontSize: "11px",
+                color: "#991b1b",
+                fontWeight: 700,
+                display: "flex",
+                alignItems: "center",
+                gap: 6,
+                boxShadow: "0 1px 4px rgba(220,38,38,.12)",
+              }}
+            >
+              <Radio size={11} style={{ animation: "emergPulse 0.8s ease-in-out infinite" }} />
+              MAYDAY · MAYDAY · MAYDAY
             </div>
-            <div>
-              <span className="text-xs text-slate-400 block mb-0.5">Est. travel time</span>
-              <span className="text-sm font-semibold text-slate-800">{travelMins} min</span>
-            </div>
-            <div>
-              <span className="text-xs text-slate-400 block mb-0.5">Speed assumption</span>
-              <span className="text-sm font-semibold text-slate-800">12 knots</span>
-            </div>
-            <div>
-              <span className="text-xs text-slate-400 block mb-0.5">Routing mode</span>
-              <span className="text-sm font-semibold text-slate-800">
-                {seaRoute.length > 2
-                  ? `${seaRoute.length - 2} waypoint${seaRoute.length > 3 ? "s" : ""} (sea-aware)`
-                  : "Direct open water"}
-              </span>
-            </div>
+          )}
+
+          <div
+            style={{
+              position: "absolute",
+              top: 10,
+              right: 10,
+              background: "rgba(255,255,255,0.92)",
+              border: emergencyMode ? "1px solid #fca5a5" : "1px solid #e2e8f0",
+              borderRadius: 6,
+              padding: "5px 10px",
+              fontSize: "11px",
+              color: emergencyMode ? "#dc2626" : "#2563eb",
+              fontWeight: 600,
+              boxShadow: "0 1px 3px rgba(0,0,0,0.07)",
+            }}
+          >
+            {emergencyMode ? "⚠ Tap island to divert" : "Click island to select"}
           </div>
         </div>
 
-        {/* Ranked island list */}
-        <div className="bg-white rounded-xl border border-slate-200 p-4 sm:p-5 shadow-sm">
-          <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1">
-            Nearest Islands Along Route
-          </p>
-          <p className="text-xs text-slate-400 mb-4">
-            Ranked by perpendicular distance to the actual sea route path
-            (equirectangular projection with cosLat scaling).
-          </p>
-          <div className="space-y-3">
-            {candidates.map((isl, i) => (
-              <div
-                key={isl.id}
-                className={`flex items-start gap-4 p-3 rounded-lg border transition-all ${
-                  i === 0
-                    ? "bg-orange-50 border-orange-300 shadow-sm"
-                    : "bg-slate-50 border-slate-200"
-                }`}
-              >
-                <span
-                  className={`text-sm font-bold min-w-[28px] text-center pt-0.5 ${
-                    i === 0 ? "text-orange-600" : "text-slate-400"
-                  }`}
+        {/* ── STATS ──────────────────────────────────────────────────────────── */}
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 10 }}>
+          {[
+            {
+              icon: <Waves size={14} color={emergencyMode ? "#dc2626" : "#2563eb"} />,
+              label: "Sea route dist",
+              val: `${routeDist.toFixed(1)} km`,
+              accent: emergencyMode ? "#991b1b" : "#1d4ed8",
+            },
+            {
+              icon: <Clock size={14} color={emergencyMode ? "#dc2626" : "#16a34a"} />,
+              label: "Est. travel time",
+              val: `${travelMins} min`,
+              accent: emergencyMode ? "#991b1b" : "#15803d",
+            },
+            {
+              icon: <Navigation size={14} color="#64748b" />,
+              label: "Waypoints",
+              val: `${seaRoute.length - 2}`,
+              accent: "#334155",
+            },
+            {
+              icon: emergencyMode
+                ? <AlertTriangle size={14} color="#dc2626" style={{ animation: "emergPulse 0.8s ease-in-out infinite" }} />
+                : <Zap size={14} color="#7c3aed" />,
+              label: "Mode",
+              val: emergencyMode ? "EMERGENCY" : "Normal",
+              accent: emergencyMode ? "#dc2626" : "#6d28d9",
+            },
+          ].map(({ icon, label, val, accent }) => (
+            <div
+              key={label}
+              style={{
+                background: "#ffffff",
+                border: label === "Mode" && emergencyMode ? "1.5px solid #fca5a5" : "1px solid #e2e8f0",
+                borderRadius: 10,
+                padding: "12px 14px",
+                boxShadow: "0 1px 3px rgba(0,0,0,0.04)",
+              }}
+            >
+              <div style={{ fontSize: "11px", color: "#94a3b8", display: "flex", alignItems: "center", gap: 5, marginBottom: 4 }}>
+                {icon} {label}
+              </div>
+              <div style={{ fontSize: "16px", fontWeight: 700, color: accent }}>{val}</div>
+            </div>
+          ))}
+        </div>
+
+        {/* ── ISLAND LIST ────────────────────────────────────────────────────── */}
+        <div
+          style={{
+            background: "#ffffff",
+            border: emergencyMode ? "1.5px solid #fca5a5" : "1px solid #e2e8f0",
+            borderRadius: 12,
+            overflow: "hidden",
+            boxShadow: "0 1px 3px rgba(0,0,0,0.06)",
+          }}
+        >
+          <div
+            style={{
+              padding: "13px 16px",
+              borderBottom: "1px solid #f1f5f9",
+              background: emergencyMode ? "#fef2f2" : "#f8fafc",
+              display: "flex",
+              alignItems: "center",
+              gap: 10,
+            }}
+          >
+            {emergencyMode
+              ? <AlertTriangle size={15} color="#dc2626" style={{ animation: "emergPulse 1s ease-in-out infinite" }} />
+              : <LifeBuoy size={15} color="#2563eb" />
+            }
+            <div>
+              <div style={{ fontSize: "13px", fontWeight: 700, color: emergencyMode ? "#991b1b" : "#0f172a" }}>
+                {emergencyMode ? "Nearest safe harbors — click to divert" : "Nearest islands along route — top 6"}
+              </div>
+              <div style={{ fontSize: "11px", color: "#94a3b8", marginTop: 1 }}>
+                Ranked by perpendicular distance to sea route · top 3 shown on map with icons
+              </div>
+            </div>
+          </div>
+
+          <div style={{ padding: "10px 12px", display: "flex", flexDirection: "column", gap: 7 }}>
+            {candidates.map((isl, i) => {
+              const rc = RANK_CONFIG[i] || RANK_CONFIG[5];
+              const isTop3 = i < 3;
+              const isSelected = selectedEmergencyId === isl.id;
+
+              return (
+                <div
+                  key={isl.id}
+                  onClick={() => handleIslandClick(isl.id)}
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 12,
+                    padding: "10px 12px",
+                    borderRadius: 9,
+                    border: isSelected
+                      ? `2px solid ${rc.activeBorder}`
+                      : `1px solid ${isTop3 ? rc.border : "#f1f5f9"}`,
+                    background: isSelected ? rc.cardBg : isTop3 ? rc.cardBg : "#ffffff",
+                    cursor: "pointer",
+                    transition: "all 0.15s",
+                  }}
+                  onMouseEnter={(e) => {
+                    (e.currentTarget as HTMLElement).style.borderColor = rc.activeBorder;
+                    (e.currentTarget as HTMLElement).style.background = rc.cardBg;
+                  }}
+                  onMouseLeave={(e) => {
+                    (e.currentTarget as HTMLElement).style.borderColor = isSelected
+                      ? rc.activeBorder
+                      : isTop3 ? rc.border : "#f1f5f9";
+                    (e.currentTarget as HTMLElement).style.background = isSelected
+                      ? rc.cardBg
+                      : isTop3 ? rc.cardBg : "#ffffff";
+                  }}
                 >
-                  #{i + 1}
-                </span>
-                <div className="flex-1 min-w-0">
-                  <div className="flex flex-wrap items-center gap-2 mb-1">
-                    <span
-                      className={`text-sm font-semibold ${
-                        i === 0 ? "text-orange-800" : "text-slate-700"
-                      }`}
-                    >
-                      {isl.name}
-                    </span>
-                    {i === 0 && (
-                      <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-orange-500 text-white">
-                        Recommended
+                  {/* Rank badge */}
+                  <div
+                    style={{
+                      width: 34,
+                      height: 34,
+                      borderRadius: "50%",
+                      background: rc.badgeBg,
+                      color: rc.badgeText,
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      fontSize: "10px",
+                      fontWeight: 700,
+                      flexShrink: 0,
+                      letterSpacing: "0.03em",
+                      border: `1px solid ${rc.border}`,
+                    }}
+                  >
+                    {topLabel(i)}
+                  </div>
+
+                  {/* Info */}
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+                      <span style={{ fontSize: "13px", fontWeight: 700, color: isTop3 ? rc.badgeText : "#64748b" }}>
+                        {isl.name}
                       </span>
+                      {isTop3 && (
+                        <span
+                          style={{
+                            background: rc.badgeBg,
+                            color: rc.badgeText,
+                            fontSize: "10px",
+                            fontWeight: 700,
+                            padding: "2px 7px",
+                            borderRadius: 4,
+                            border: `1px solid ${rc.border}`,
+                          }}
+                        >
+                          {emergencyMode ? "⚑ Divert here" : "On map"}
+                        </span>
+                      )}
+                      {isSelected && emergencyMode && (
+                        <span
+                          style={{
+                            background: "#dc2626",
+                            color: "#fff",
+                            fontSize: "10px",
+                            fontWeight: 700,
+                            padding: "2px 8px",
+                            borderRadius: 4,
+                            animation: "emergPulse 0.8s ease-in-out infinite",
+                          }}
+                        >
+                          🆘 Selected
+                        </span>
+                      )}
+                    </div>
+                    <p style={{ fontSize: "12px", color: "#64748b", marginTop: 2 }}>{isl.info}</p>
+                    <p style={{ fontSize: "11px", color: "#94a3b8", marginTop: 1 }}>
+                      {isl.dist.toFixed(2)} km off-route · {isl.distFromDep.toFixed(1)} km from dep · {isl.distFromArr.toFixed(1)} km from dest
+                    </p>
+                  </div>
+
+                  {/* Distance + CTA */}
+                  <div style={{ textAlign: "right", flexShrink: 0, display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 4 }}>
+                    <div style={{ fontSize: "15px", fontWeight: 700, color: isTop3 ? rc.badgeText : "#94a3b8" }}>
+                      {isl.dist.toFixed(1)} km
+                    </div>
+                    <div style={{ fontSize: "10px", color: "#cbd5e1" }}>off route</div>
+                    {emergencyMode ? (
+                      <div
+                        style={{
+                          background: isSelected ? rc.activeBorder : "#fff",
+                          border: `1.5px solid ${rc.activeBorder}`,
+                          color: isSelected ? "#fff" : rc.badgeText,
+                          borderRadius: 5,
+                          padding: "3px 9px",
+                          fontSize: "10px",
+                          fontWeight: 700,
+                          display: "flex",
+                          alignItems: "center",
+                          gap: 4,
+                          cursor: "pointer",
+                        }}
+                      >
+                        <AlertTriangle size={9} />
+                        {isSelected ? "Diverting" : "Divert"}
+                      </div>
+                    ) : (
+                      <ChevronRight size={15} color={isTop3 ? rc.activeBorder : "#cbd5e1"} />
                     )}
                   </div>
-                  <p className="text-xs text-slate-500 mb-1">{isl.info}</p>
-                  <p className="text-xs text-slate-400">
-                    {isl.dist.toFixed(2)} km off-route ·{" "}
-                    {isl.distFromDep.toFixed(1)} km from dep ·{" "}
-                    {isl.distFromArr.toFixed(1)} km from arr
-                  </p>
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         </div>
 
-        {/* Coordinate audit footer */}
-        <div className="bg-slate-50 rounded-xl border border-slate-200 p-4 text-xs text-slate-400 space-y-1">
-          <p className="font-semibold text-slate-500">Coordinate sources &amp; corrections</p>
+        {/* ── FOOTER ─────────────────────────────────────────────────────────── */}
+        <div
+          style={{
+            background: "#f8fafc",
+            border: "1px solid #e2e8f0",
+            borderRadius: 10,
+            padding: "12px 16px",
+            fontSize: "11px",
+            color: "#94a3b8",
+            lineHeight: 1.8,
+          }}
+        >
+          <p style={{ color: "#64748b", fontWeight: 700, marginBottom: 4 }}>
+            Coordinate sources &amp; corrections
+          </p>
           <p>Marigondon Port · PhilAtlas/OSM → 10.2749, 123.9752 (was 124.0016 — fixed 2.7 km)</p>
           <p>Angasil Port · nearbyph.com → 10.3037, 124.0185 (was 123.9494 — fixed 7 km)</p>
           <p>Hilton/Punta Engaño · Wikivoyage → 10.3112, 124.0248 — confirmed</p>
@@ -730,6 +1099,7 @@ export default function NearestIslandRecommendation() {
           <p>Camotes/Consuelo · PhilAtlas PSA → 10.6347, 124.3014 (was 124.3484 — fixed 5 km)</p>
           <p>Getafe Port · PhilAtlas Poblacion → 10.1454, 124.1588 (was 124.358 — fixed 22 km!)</p>
         </div>
+
       </div>
     </div>
   );
