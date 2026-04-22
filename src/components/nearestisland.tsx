@@ -1,17 +1,13 @@
 import { useEffect, useRef, useState, useMemo } from "react";
 import {
-  AlertTriangle,
   Anchor,
   Navigation,
   MapPin,
   Clock,
   Waves,
-  Shield,
-  Radio,
   Zap,
   ChevronRight,
   LifeBuoy,
-  Siren,
 } from "lucide-react";
 
 // ─── MAPBOX ───────────────────────────────────────────────────────────────────
@@ -256,7 +252,7 @@ function pointToRouteSegmentsDist(
   return minDist;
 }
 
-// ─── RANK CONFIGS (white-background friendly) ─────────────────────────────────
+// ─── RANK CONFIGS ─────────────────────────────────────────────────────────────
 const RANK_CONFIG = [
   { badgeBg: "#fee2e2", badgeText: "#991b1b", border: "#fca5a5", activeBorder: "#ef4444", cardBg: "#fff5f5", label: "CLOSEST" },
   { badgeBg: "#fff7ed", badgeText: "#9a3412", border: "#fed7aa", activeBorder: "#f97316", cardBg: "#fffbf5", label: "2ND"     },
@@ -275,16 +271,11 @@ export default function NearestIslandRecommendation() {
   const [depId, setDepId] = useState<string>(PORTS[0].id);
   const [arrId, setArrId] = useState<string>(ISLANDS[0].id);
   const [mapLoaded, setMapLoaded] = useState(false);
-  const [emergencyMode, setEmergencyMode] = useState(false);
-  const [selectedEmergencyId, setSelectedEmergencyId] = useState<string | null>(null);
 
   const dep = useMemo(() => PORTS.find((p) => p.id === depId)!, [depId]);
   const arr = useMemo(() => ALL_LOCATIONS.find((p) => p.id === arrId)!, [arrId]);
 
-  const activeArrId = emergencyMode && selectedEmergencyId ? selectedEmergencyId : arrId;
-  const activeArr = useMemo(() => ALL_LOCATIONS.find((p) => p.id === activeArrId)!, [activeArrId]);
-
-  const seaRoute = useMemo(() => getSeaRoute(depId, activeArrId), [depId, activeArrId]);
+  const seaRoute = useMemo(() => getSeaRoute(depId, arrId), [depId, arrId]);
 
   const routeDist = useMemo(() => {
     let total = 0;
@@ -297,16 +288,16 @@ export default function NearestIslandRecommendation() {
   const travelMins = useMemo(() => Math.round((routeDist / 12) * 60), [routeDist]);
 
   const candidates = useMemo(() => {
-    return ALL_LOCATIONS.filter((p) => p.id !== depId && p.id !== activeArrId)
+    return ALL_LOCATIONS.filter((p) => p.id !== depId && p.id !== arrId)
       .map((p) => ({
         ...p,
         dist: pointToRouteSegmentsDist(p.lat, p.lng, seaRoute),
         distFromDep: haversine(p.lat, p.lng, dep.lat, dep.lng),
-        distFromArr: haversine(p.lat, p.lng, activeArr.lat, activeArr.lng),
+        distFromArr: haversine(p.lat, p.lng, arr.lat, arr.lng),
       }))
       .sort((a, b) => a.dist - b.dist)
       .slice(0, 6);
-  }, [dep, activeArr, depId, activeArrId, seaRoute]);
+  }, [dep, arr, depId, arrId, seaRoute]);
 
   // ── Map bootstrap ──────────────────────────────────────────────────────────
   useEffect(() => {
@@ -343,7 +334,7 @@ export default function NearestIslandRecommendation() {
     } else {
       renderRoute();
     }
-  }, [mapLoaded, dep, activeArr, candidates, seaRoute, emergencyMode, selectedEmergencyId]);
+  }, [mapLoaded, dep, arr, candidates, seaRoute]);
 
   function clearMarkers() {
     markersRef.current.forEach((m) => m.remove());
@@ -363,8 +354,6 @@ export default function NearestIslandRecommendation() {
     allLayerIds.forEach((id) => { try { if (map.getLayer(id)) map.removeLayer(id); } catch (_) {} });
     allSourceIds.forEach((id) => { try { if (map.getSource(id)) map.removeSource(id); } catch (_) {} });
 
-    const routeColor = emergencyMode ? "#dc2626" : "#2563eb";
-
     map.addSource("route-src", {
       type: "geojson",
       data: {
@@ -377,9 +366,9 @@ export default function NearestIslandRecommendation() {
       type: "line",
       source: "route-src",
       paint: {
-        "line-color": routeColor,
-        "line-width": emergencyMode ? 4 : 3,
-        "line-dasharray": emergencyMode ? [1.5, 1] : [2, 1.5],
+        "line-color": "#2563eb",
+        "line-width": 3,
+        "line-dasharray": [2, 1.5],
       },
     });
 
@@ -430,45 +419,42 @@ export default function NearestIslandRecommendation() {
     addMarker(depEl, dep.lng, dep.lat);
 
     // Arrival marker
-    const isEmergDest = emergencyMode && selectedEmergencyId;
     const arrEl = document.createElement("div");
     arrEl.innerHTML = `
       <div style="display:flex;flex-direction:column;align-items:center;cursor:default">
-        <div style="background:${isEmergDest ? "#dc2626" : "#16a34a"};color:#fff;font-size:11px;font-weight:700;
+        <div style="background:#16a34a;color:#fff;font-size:11px;font-weight:700;
                     padding:4px 9px;border-radius:6px;white-space:nowrap;
                     box-shadow:0 2px 6px rgba(0,0,0,.2);margin-bottom:4px">
-          ${isEmergDest ? "🆘" : "🟢"} ${activeArr.name.split("(")[0].trim()}
+          🟢 ${arr.name.split("(")[0].trim()}
         </div>
         <div style="width:14px;height:14px;border-radius:50%;
-                    background:${isEmergDest ? "#dc2626" : "#16a34a"};border:2.5px solid #fff;
+                    background:#16a34a;border:2.5px solid #fff;
                     box-shadow:0 1px 4px rgba(0,0,0,.2)"></div>
       </div>`;
-    addMarker(arrEl, activeArr.lng, activeArr.lat);
+    addMarker(arrEl, arr.lng, arr.lat);
 
-    // Top-3 map icons with colored labels
+    // Top-3 map icons
     const top3Styles = [
-      { bg: "#dc2626", text: "#fff", dot: "#dc2626", emoji: emergencyMode ? "🆘" : "🔴" },
-      { bg: "#ea580c", text: "#fff", dot: "#ea580c", emoji: emergencyMode ? "⚠️" : "🟠" },
-      { bg: "#ca8a04", text: "#fff", dot: "#ca8a04", emoji: emergencyMode ? "⚑" : "🟡" },
+      { bg: "#dc2626", text: "#fff", dot: "#dc2626", emoji: "🔴" },
+      { bg: "#ea580c", text: "#fff", dot: "#ea580c", emoji: "🟠" },
+      { bg: "#ca8a04", text: "#fff", dot: "#ca8a04", emoji: "🟡" },
     ];
     candidates.slice(0, 3).forEach((isl, i) => {
       const s = top3Styles[i];
-      const isSelected = selectedEmergencyId === isl.id && emergencyMode;
       const el = document.createElement("div");
       el.style.cursor = "pointer";
       el.innerHTML = `
         <div style="display:flex;flex-direction:column;align-items:center">
           <div style="background:${s.bg};color:${s.text};font-size:11px;font-weight:700;
                       padding:4px 9px;border-radius:6px;white-space:nowrap;
-                      box-shadow:0 2px 6px rgba(0,0,0,.25);margin-bottom:4px;
-                      ${isSelected ? "outline:2.5px solid #fff;outline-offset:1px;" : ""}">
+                      box-shadow:0 2px 6px rgba(0,0,0,.25);margin-bottom:4px">
             ${s.emoji} #${i + 1} ${isl.name.split("(")[0].trim()}
           </div>
           <div style="width:${i === 0 ? 14 : 11}px;height:${i === 0 ? 14 : 11}px;border-radius:50%;
                       background:${s.dot};border:2.5px solid #fff;
                       box-shadow:0 1px 4px rgba(0,0,0,.2)"></div>
         </div>`;
-      el.addEventListener("click", () => handleIslandClick(isl.id));
+      el.addEventListener("click", () => setArrId(isl.id));
       addMarker(el, isl.lng, isl.lat);
     });
 
@@ -478,14 +464,14 @@ export default function NearestIslandRecommendation() {
       el.style.cursor = "pointer";
       el.title = isl.name;
       el.innerHTML = `<div style="width:9px;height:9px;border-radius:50%;background:#94a3b8;border:2px solid #fff;box-shadow:0 1px 3px rgba(0,0,0,.15)"></div>`;
-      el.addEventListener("click", () => handleIslandClick(isl.id));
+      el.addEventListener("click", () => setArrId(isl.id));
       addMarker(el, isl.lng, isl.lat, "center");
     });
 
     // Waypoint dots
     seaRoute.slice(1, -1).forEach((wp) => {
       const el = document.createElement("div");
-      el.style.cssText = `width:5px;height:5px;border-radius:50%;background:${emergencyMode ? "#fca5a5" : "#93c5fd"};border:1px solid #fff;opacity:0.8`;
+      el.style.cssText = `width:5px;height:5px;border-radius:50%;background:#93c5fd;border:1px solid #fff;opacity:0.8`;
       addMarker(el, wp.lng, wp.lat, "center");
     });
 
@@ -500,21 +486,6 @@ export default function NearestIslandRecommendation() {
     }
   }
 
-  function handleIslandClick(id: string) {
-    if (emergencyMode) {
-      setSelectedEmergencyId((prev) => (prev === id ? null : id));
-    } else {
-      setArrId(id);
-    }
-  }
-
-  function toggleEmergencyMode() {
-    setEmergencyMode((prev) => {
-      if (prev) setSelectedEmergencyId(null);
-      return !prev;
-    });
-  }
-
   const arrOptions = ALL_LOCATIONS.filter((l) => l.id !== depId);
 
   const topLabel = (i: number) => {
@@ -525,52 +496,18 @@ export default function NearestIslandRecommendation() {
   };
 
   return (
-    <div
-      className="min-h-screen"
-      style={{ background: emergencyMode ? "#fff5f5" : "#f1f5f9" }}
-    >
-      <style>{`
-        @keyframes emergPulse { 0%,100%{opacity:1} 50%{opacity:0.45} }
-        @keyframes borderBlink { 0%,100%{border-color:#fca5a5;box-shadow:0 0 0 3px #fee2e2} 50%{border-color:#ef4444;box-shadow:0 0 0 3px #fecaca} }
-        @keyframes stripeBg { 0%{background-position:0 0} 100%{background-position:40px 0} }
-        .emerg-stripe {
-          background: repeating-linear-gradient(-45deg, #fee2e2 0px, #fee2e2 8px, #fef2f2 8px, #fef2f2 16px);
-          animation: stripeBg 1s linear infinite;
-        }
-        .emerg-blink-border { animation: borderBlink 1.2s ease-in-out infinite; }
-      `}</style>
-
+    <div className="min-h-screen" style={{ background: "#f1f5f9" }}>
       {/* ── HEADER ─────────────────────────────────────────────────────────── */}
       <div
         style={{
           background: "#ffffff",
-          borderBottom: emergencyMode ? "2px solid #fca5a5" : "1px solid #e2e8f0",
+          borderBottom: "1px solid #e2e8f0",
           position: "sticky",
           top: 0,
           zIndex: 50,
           boxShadow: "0 1px 4px rgba(0,0,0,0.07)",
         }}
       >
-        {emergencyMode && (
-          <div
-            className="emerg-stripe"
-            style={{
-              padding: "7px 20px",
-              display: "flex",
-              alignItems: "center",
-              gap: 10,
-              fontSize: "12px",
-              fontWeight: 700,
-              color: "#991b1b",
-              letterSpacing: "0.06em",
-            }}
-          >
-            <AlertTriangle size={14} style={{ animation: "emergPulse 0.8s ease-in-out infinite" }} />
-            EMERGENCY DIVERSION ACTIVE — SELECT NEAREST SAFE HARBOR BELOW
-            <AlertTriangle size={14} style={{ animation: "emergPulse 0.8s ease-in-out infinite" }} />
-          </div>
-        )}
-
         <div
           style={{
             maxWidth: 1100,
@@ -578,59 +515,18 @@ export default function NearestIslandRecommendation() {
             padding: "14px 20px",
             display: "flex",
             alignItems: "center",
-            justifyContent: "space-between",
-            flexWrap: "wrap",
             gap: 12,
           }}
         >
-          <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-            {emergencyMode
-              ? <LifeBuoy size={26} color="#dc2626" />
-              : <Anchor size={26} color="#2563eb" />
-            }
-            <div>
-              <h1
-                style={{
-                  fontSize: "19px",
-                  fontWeight: 700,
-                  color: emergencyMode ? "#991b1b" : "#0f172a",
-                  letterSpacing: "-0.01em",
-                }}
-              >
-                {emergencyMode ? "Emergency Island Finder" : "Ferry Route · Nearest Island Finder"}
-              </h1>
-              <p style={{ fontSize: "12px", color: emergencyMode ? "#ef4444" : "#64748b", marginTop: 1 }}>
-                {emergencyMode
-                  ? "Sea-aware routing · Tap any island to divert · Mactan, Cebu"
-                  : "Lapu-Lapu City, Cebu — verified coordinates · sea-aware routing"}
-              </p>
-            </div>
+          <Anchor size={26} color="#2563eb" />
+          <div>
+            <h1 style={{ fontSize: "19px", fontWeight: 700, color: "#0f172a", letterSpacing: "-0.01em" }}>
+              Ferry Route · Nearest Island Finder
+            </h1>
+            <p style={{ fontSize: "12px", color: "#64748b", marginTop: 1 }}>
+              Lapu-Lapu City, Cebu — verified coordinates · sea-aware routing
+            </p>
           </div>
-
-          <button
-            onClick={toggleEmergencyMode}
-            style={{
-              background: emergencyMode ? "#fef2f2" : "#ffffff",
-              color: emergencyMode ? "#dc2626" : "#475569",
-              border: `1.5px solid ${emergencyMode ? "#fca5a5" : "#cbd5e1"}`,
-              borderRadius: 8,
-              padding: "8px 16px",
-              fontSize: "12px",
-              fontWeight: 700,
-              cursor: "pointer",
-              letterSpacing: "0.03em",
-              display: "flex",
-              alignItems: "center",
-              gap: 7,
-              transition: "all 0.2s",
-              boxShadow: emergencyMode ? "0 0 0 3px #fee2e2" : "0 1px 3px rgba(0,0,0,0.06)",
-            }}
-          >
-            {emergencyMode
-              ? <><Shield size={13} /> Cancel Emergency</>
-              : <><AlertTriangle size={13} /> Emergency Mode</>
-            }
-          </button>
         </div>
       </div>
 
@@ -640,12 +536,11 @@ export default function NearestIslandRecommendation() {
         <div
           style={{
             background: "#ffffff",
-            border: emergencyMode ? "1.5px solid #fca5a5" : "1px solid #e2e8f0",
+            border: "1px solid #e2e8f0",
             borderRadius: 12,
             padding: "16px 18px",
             boxShadow: "0 1px 3px rgba(0,0,0,0.06)",
           }}
-          className={emergencyMode ? "emerg-blink-border" : ""}
         >
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
             <div>
@@ -673,7 +568,6 @@ export default function NearestIslandRecommendation() {
                     const fallback = ALL_LOCATIONS.find((l) => l.id !== newDep);
                     if (fallback) setArrId(fallback.id);
                   }
-                  setSelectedEmergencyId(null);
                 }}
                 style={{
                   width: "100%",
@@ -700,74 +594,34 @@ export default function NearestIslandRecommendation() {
                   gap: 5,
                   fontSize: "11px",
                   fontWeight: 700,
-                  color: emergencyMode ? "#dc2626" : "#16a34a",
+                  color: "#16a34a",
                   letterSpacing: "0.08em",
                   textTransform: "uppercase" as const,
                   marginBottom: 6,
                 }}
               >
-                <MapPin size={10} />
-                {emergencyMode && selectedEmergencyId ? "Emergency Dest (overridden)" : "Arrival Island / Port"}
+                <MapPin size={10} /> Arrival Island / Port
               </label>
               <select
                 value={arrId}
-                onChange={(e) => { setArrId(e.target.value); setSelectedEmergencyId(null); }}
-                disabled={!!(emergencyMode && selectedEmergencyId)}
+                onChange={(e) => setArrId(e.target.value)}
                 style={{
                   width: "100%",
-                  background: emergencyMode && selectedEmergencyId ? "#f8fafc" : "#f8fafc",
-                  color: emergencyMode && selectedEmergencyId ? "#94a3b8" : emergencyMode ? "#991b1b" : "#14532d",
-                  border: `1.5px solid ${emergencyMode && selectedEmergencyId ? "#e2e8f0" : emergencyMode ? "#fca5a5" : "#bbf7d0"}`,
+                  background: "#f8fafc",
+                  color: "#14532d",
+                  border: "1.5px solid #bbf7d0",
                   borderRadius: 7,
                   padding: "8px 10px",
                   fontSize: "13px",
                   fontWeight: 500,
-                  cursor: emergencyMode && selectedEmergencyId ? "not-allowed" : "pointer",
+                  cursor: "pointer",
                   outline: "none",
-                  opacity: emergencyMode && selectedEmergencyId ? 0.55 : 1,
                 }}
               >
                 {arrOptions.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
               </select>
             </div>
           </div>
-
-          {/* Emergency override banner */}
-          {emergencyMode && selectedEmergencyId && (
-            <div
-              style={{
-                marginTop: 12,
-                background: "#fef2f2",
-                border: "1.5px solid #fca5a5",
-                borderRadius: 8,
-                padding: "9px 14px",
-                display: "flex",
-                alignItems: "center",
-                gap: 10,
-              }}
-            >
-              <Siren size={15} color="#dc2626" style={{ animation: "emergPulse 0.9s ease-in-out infinite", flexShrink: 0 }} />
-              <span style={{ fontSize: "13px", fontWeight: 700, color: "#991b1b" }}>
-                Diverting to: {ALL_LOCATIONS.find((l) => l.id === selectedEmergencyId)?.name}
-              </span>
-              <button
-                onClick={() => setSelectedEmergencyId(null)}
-                style={{
-                  marginLeft: "auto",
-                  background: "#fff",
-                  border: "1px solid #fca5a5",
-                  color: "#dc2626",
-                  borderRadius: 5,
-                  padding: "4px 12px",
-                  fontSize: "11px",
-                  fontWeight: 700,
-                  cursor: "pointer",
-                }}
-              >
-                Cancel
-              </button>
-            </div>
-          )}
 
           {/* Legend */}
           <div
@@ -781,13 +635,13 @@ export default function NearestIslandRecommendation() {
             }}
           >
             {[
-              { color: emergencyMode ? "#dc2626" : "#2563eb", label: "Route line" },
-              { color: "#2563eb",  label: "Departure" },
-              { color: emergencyMode ? "#dc2626" : "#16a34a", label: "Destination" },
-              { color: "#dc2626",  label: "Nearest (#1)" },
-              { color: "#ea580c",  label: "2nd closest" },
-              { color: "#ca8a04",  label: "3rd closest" },
-              { color: "#94a3b8",  label: "Other islands" },
+              { color: "#2563eb", label: "Route line" },
+              { color: "#2563eb", label: "Departure" },
+              { color: "#16a34a", label: "Destination" },
+              { color: "#dc2626", label: "Nearest (#1)" },
+              { color: "#ea580c", label: "2nd closest" },
+              { color: "#ca8a04", label: "3rd closest" },
+              { color: "#94a3b8", label: "Other islands" },
             ].map(({ color, label }) => (
               <div key={label} style={{ display: "flex", alignItems: "center", gap: 5 }}>
                 <div style={{ width: 8, height: 8, borderRadius: "50%", background: color }} />
@@ -803,54 +657,27 @@ export default function NearestIslandRecommendation() {
             position: "relative",
             borderRadius: 12,
             overflow: "hidden",
-            border: emergencyMode ? "2px solid #fca5a5" : "1px solid #e2e8f0",
-            boxShadow: emergencyMode
-              ? "0 0 0 3px #fee2e2, 0 2px 8px rgba(0,0,0,0.07)"
-              : "0 2px 8px rgba(0,0,0,0.06)",
+            border: "1px solid #e2e8f0",
+            boxShadow: "0 2px 8px rgba(0,0,0,0.06)",
           }}
         >
           <div ref={mapContainer} style={{ width: "100%", height: 440 }} />
-
-          {emergencyMode && (
-            <div
-              style={{
-                position: "absolute",
-                top: 10,
-                left: 10,
-                background: "rgba(255,255,255,0.94)",
-                border: "1.5px solid #fca5a5",
-                borderRadius: 7,
-                padding: "6px 11px",
-                fontSize: "11px",
-                color: "#991b1b",
-                fontWeight: 700,
-                display: "flex",
-                alignItems: "center",
-                gap: 6,
-                boxShadow: "0 1px 4px rgba(220,38,38,.12)",
-              }}
-            >
-              <Radio size={11} style={{ animation: "emergPulse 0.8s ease-in-out infinite" }} />
-              MAYDAY · MAYDAY · MAYDAY
-            </div>
-          )}
-
           <div
             style={{
               position: "absolute",
               top: 10,
               right: 10,
               background: "rgba(255,255,255,0.92)",
-              border: emergencyMode ? "1px solid #fca5a5" : "1px solid #e2e8f0",
+              border: "1px solid #e2e8f0",
               borderRadius: 6,
               padding: "5px 10px",
               fontSize: "11px",
-              color: emergencyMode ? "#dc2626" : "#2563eb",
+              color: "#2563eb",
               fontWeight: 600,
               boxShadow: "0 1px 3px rgba(0,0,0,0.07)",
             }}
           >
-            {emergencyMode ? "⚠ Tap island to divert" : "Click island to select"}
+            Click island to select
           </div>
         </div>
 
@@ -858,16 +685,16 @@ export default function NearestIslandRecommendation() {
         <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 10 }}>
           {[
             {
-              icon: <Waves size={14} color={emergencyMode ? "#dc2626" : "#2563eb"} />,
+              icon: <Waves size={14} color="#2563eb" />,
               label: "Sea route dist",
               val: `${routeDist.toFixed(1)} km`,
-              accent: emergencyMode ? "#991b1b" : "#1d4ed8",
+              accent: "#1d4ed8",
             },
             {
-              icon: <Clock size={14} color={emergencyMode ? "#dc2626" : "#16a34a"} />,
+              icon: <Clock size={14} color="#16a34a" />,
               label: "Est. travel time",
               val: `${travelMins} min`,
-              accent: emergencyMode ? "#991b1b" : "#15803d",
+              accent: "#15803d",
             },
             {
               icon: <Navigation size={14} color="#64748b" />,
@@ -876,19 +703,17 @@ export default function NearestIslandRecommendation() {
               accent: "#334155",
             },
             {
-              icon: emergencyMode
-                ? <AlertTriangle size={14} color="#dc2626" style={{ animation: "emergPulse 0.8s ease-in-out infinite" }} />
-                : <Zap size={14} color="#7c3aed" />,
-              label: "Mode",
-              val: emergencyMode ? "EMERGENCY" : "Normal",
-              accent: emergencyMode ? "#dc2626" : "#6d28d9",
+              icon: <Zap size={14} color="#7c3aed" />,
+              label: "Islands nearby",
+              val: `${candidates.length}`,
+              accent: "#6d28d9",
             },
           ].map(({ icon, label, val, accent }) => (
             <div
               key={label}
               style={{
                 background: "#ffffff",
-                border: label === "Mode" && emergencyMode ? "1.5px solid #fca5a5" : "1px solid #e2e8f0",
+                border: "1px solid #e2e8f0",
                 borderRadius: 10,
                 padding: "12px 14px",
                 boxShadow: "0 1px 3px rgba(0,0,0,0.04)",
@@ -906,7 +731,7 @@ export default function NearestIslandRecommendation() {
         <div
           style={{
             background: "#ffffff",
-            border: emergencyMode ? "1.5px solid #fca5a5" : "1px solid #e2e8f0",
+            border: "1px solid #e2e8f0",
             borderRadius: 12,
             overflow: "hidden",
             boxShadow: "0 1px 3px rgba(0,0,0,0.06)",
@@ -916,19 +741,16 @@ export default function NearestIslandRecommendation() {
             style={{
               padding: "13px 16px",
               borderBottom: "1px solid #f1f5f9",
-              background: emergencyMode ? "#fef2f2" : "#f8fafc",
+              background: "#f8fafc",
               display: "flex",
               alignItems: "center",
               gap: 10,
             }}
           >
-            {emergencyMode
-              ? <AlertTriangle size={15} color="#dc2626" style={{ animation: "emergPulse 1s ease-in-out infinite" }} />
-              : <LifeBuoy size={15} color="#2563eb" />
-            }
+            <LifeBuoy size={15} color="#2563eb" />
             <div>
-              <div style={{ fontSize: "13px", fontWeight: 700, color: emergencyMode ? "#991b1b" : "#0f172a" }}>
-                {emergencyMode ? "Nearest safe harbors — click to divert" : "Nearest islands along route — top 6"}
+              <div style={{ fontSize: "13px", fontWeight: 700, color: "#0f172a" }}>
+                Nearest islands along route — top 6
               </div>
               <div style={{ fontSize: "11px", color: "#94a3b8", marginTop: 1 }}>
                 Ranked by perpendicular distance to sea route · top 3 shown on map with icons
@@ -940,22 +762,19 @@ export default function NearestIslandRecommendation() {
             {candidates.map((isl, i) => {
               const rc = RANK_CONFIG[i] || RANK_CONFIG[5];
               const isTop3 = i < 3;
-              const isSelected = selectedEmergencyId === isl.id;
 
               return (
                 <div
                   key={isl.id}
-                  onClick={() => handleIslandClick(isl.id)}
+                  onClick={() => setArrId(isl.id)}
                   style={{
                     display: "flex",
                     alignItems: "center",
                     gap: 12,
                     padding: "10px 12px",
                     borderRadius: 9,
-                    border: isSelected
-                      ? `2px solid ${rc.activeBorder}`
-                      : `1px solid ${isTop3 ? rc.border : "#f1f5f9"}`,
-                    background: isSelected ? rc.cardBg : isTop3 ? rc.cardBg : "#ffffff",
+                    border: `1px solid ${isTop3 ? rc.border : "#f1f5f9"}`,
+                    background: isTop3 ? rc.cardBg : "#ffffff",
                     cursor: "pointer",
                     transition: "all 0.15s",
                   }}
@@ -964,12 +783,8 @@ export default function NearestIslandRecommendation() {
                     (e.currentTarget as HTMLElement).style.background = rc.cardBg;
                   }}
                   onMouseLeave={(e) => {
-                    (e.currentTarget as HTMLElement).style.borderColor = isSelected
-                      ? rc.activeBorder
-                      : isTop3 ? rc.border : "#f1f5f9";
-                    (e.currentTarget as HTMLElement).style.background = isSelected
-                      ? rc.cardBg
-                      : isTop3 ? rc.cardBg : "#ffffff";
+                    (e.currentTarget as HTMLElement).style.borderColor = isTop3 ? rc.border : "#f1f5f9";
+                    (e.currentTarget as HTMLElement).style.background = isTop3 ? rc.cardBg : "#ffffff";
                   }}
                 >
                   {/* Rank badge */}
@@ -1011,22 +826,7 @@ export default function NearestIslandRecommendation() {
                             border: `1px solid ${rc.border}`,
                           }}
                         >
-                          {emergencyMode ? "⚑ Divert here" : "On map"}
-                        </span>
-                      )}
-                      {isSelected && emergencyMode && (
-                        <span
-                          style={{
-                            background: "#dc2626",
-                            color: "#fff",
-                            fontSize: "10px",
-                            fontWeight: 700,
-                            padding: "2px 8px",
-                            borderRadius: 4,
-                            animation: "emergPulse 0.8s ease-in-out infinite",
-                          }}
-                        >
-                          🆘 Selected
+                          On map
                         </span>
                       )}
                     </div>
@@ -1036,34 +836,13 @@ export default function NearestIslandRecommendation() {
                     </p>
                   </div>
 
-                  {/* Distance + CTA */}
+                  {/* Distance */}
                   <div style={{ textAlign: "right", flexShrink: 0, display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 4 }}>
                     <div style={{ fontSize: "15px", fontWeight: 700, color: isTop3 ? rc.badgeText : "#94a3b8" }}>
                       {isl.dist.toFixed(1)} km
                     </div>
                     <div style={{ fontSize: "10px", color: "#cbd5e1" }}>off route</div>
-                    {emergencyMode ? (
-                      <div
-                        style={{
-                          background: isSelected ? rc.activeBorder : "#fff",
-                          border: `1.5px solid ${rc.activeBorder}`,
-                          color: isSelected ? "#fff" : rc.badgeText,
-                          borderRadius: 5,
-                          padding: "3px 9px",
-                          fontSize: "10px",
-                          fontWeight: 700,
-                          display: "flex",
-                          alignItems: "center",
-                          gap: 4,
-                          cursor: "pointer",
-                        }}
-                      >
-                        <AlertTriangle size={9} />
-                        {isSelected ? "Diverting" : "Divert"}
-                      </div>
-                    ) : (
-                      <ChevronRight size={15} color={isTop3 ? rc.activeBorder : "#cbd5e1"} />
-                    )}
+                    <ChevronRight size={15} color={isTop3 ? rc.activeBorder : "#cbd5e1"} />
                   </div>
                 </div>
               );
