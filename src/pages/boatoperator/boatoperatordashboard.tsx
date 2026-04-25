@@ -1,16 +1,16 @@
-import BoatOperatorSidebar from "../../components/boatoperatordashboardsidebar.js";
-import {ManageBoatsCard, type BoatDetails} from "../../cards/managevesselcard.js";
-import { Plus, X } from "lucide-react"
-import { useState, useEffect, useMemo } from "react";
+import { Plus, X } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import ViewBookingsCard from "../../cards/viewbookingscard.js";
-import { apiFetch } from "../../utils/apifetch.js"
 import ManagePriceCard from "../../cards/managepricecard.js";
-import WeatherForecastCard from "../../cards/weatherforecastcard.js";
+import { ManageBoatsCard, type BoatDetails } from "../../cards/managevesselcard.js";
 import OperatorBookingHistoryCard from "../../cards/operatorbookingcard.js";
+import ViewBookingsCard from "../../cards/viewbookingscard.js";
 import ViewRefundCard from "../../cards/viewrefundcard.js";
-import  PricePredictionGraph from "../../components/pricepredictiongraph.js";
+import WeatherForecastCard from "../../cards/weatherforecastcard.js";
+import BoatOperatorSidebar from "../../components/boatoperatordashboardsidebar.js";
 import NearestIslandRecommendation from "../../components/nearestisland.js";
+import PricePredictionGraph from "../../components/pricepredictiongraph.js";
+import { apiFetch } from "../../utils/apifetch.js";
 
 
 interface BoatOperatorSession {
@@ -837,7 +837,7 @@ const filteredBookingHistory = useMemo(() =>
                 onClick={async () => {
                   try {
                     const res = await apiFetch(
-                      `http://localhost:3000/boatoperator/confirmdeleteboat/${boatToDelete}`,
+                      `https://boatfinder.onrender.com/boatoperator/confirmdeleteboat/${boatToDelete}`,
                       { method: "DELETE", credentials: "include" }
                     );
                     if (!res.ok) throw new Error("Failed to delete boat");

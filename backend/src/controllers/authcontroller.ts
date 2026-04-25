@@ -1,10 +1,10 @@
-import {connection} from "../config/mysql.js";
-import {Request, Response} from "express";
+import { Request, Response } from "express";
+import { connection } from "../config/mysql.js";
 
-import { hashPassword , verifyPassword} from "../lib/passwordhash.js";
-import { RowDataPacket } from "mysql2";
-import jwt from "jsonwebtoken";
 import crypto from "crypto";
+import jwt from "jsonwebtoken";
+import { RowDataPacket } from "mysql2";
+import { hashPassword, verifyPassword } from "../lib/passwordhash.js";
 
 // ─── Helper ────────────────────────────────────────────────────────────────
 async function insertLog(
@@ -212,7 +212,7 @@ export async function RegisterController(req: Request, res: Response) {
 
     // Check duplicates
     const [existing] = await conn.execute<RowDataPacket[]>(
-      "SELECT user_id FROM users WHERE email = ? OR userName = ?",
+      "SELECT user_id FROM users WHERE  userName = ?",
       [mail, uName]
     );
 
