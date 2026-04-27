@@ -1,6 +1,6 @@
 import { useEffect, useState, useRef } from "react";
 import {
-  AreaChart, Area, BarChart, Bar, LineChart, Line,
+  Area, BarChart, Bar, LineChart, Line,
   ComposedChart, CartesianGrid, XAxis, YAxis, Tooltip,
   Legend, ResponsiveContainer, ReferenceLine, Cell,
 } from "recharts";
@@ -18,6 +18,11 @@ interface NationalPoint {
   upper: number | null;
   pct_change: number | null;
   oil_shock: boolean;
+  // normalised versions (% of series peak)
+  actual_pct: number | null;
+  predicted_pct: number | null;
+  lower_pct: number | null;
+  upper_pct: number | null;
 }
 
 interface SeasonalRow {
@@ -62,7 +67,6 @@ const SCENARIO_LABEL_MAP: Record<string, string> = {
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 
-const fmtM = (v: number) => `${(v / 1_000_000).toFixed(1)}M`;
 const fmtPct = (v: number | null, decimals = 1) =>
   v != null ? `${v >= 0 ? "+" : ""}${v.toFixed(decimals)}%` : "—";
 
@@ -92,16 +96,32 @@ function seasonShape(row: SeasonalRow, allData: SeasonalRow[]): number | null {
   return row.fc_avg != null ? +((row.fc_avg - avg) / avg * 100).toFixed(1) : null;
 }
 
+// ── Normalise raw series to % of series-wide peak ─────────────────────────
+
+function normalisePoints(arr: Omit<NationalPoint, "actual_pct" | "predicted_pct" | "lower_pct" | "upper_pct">[]): NationalPoint[] {
+  const peak = Math.max(
+    ...arr.map(d => Math.max(d.actual ?? 0, d.predicted ?? 0, d.upper ?? 0))
+  );
+  const safe = peak > 0 ? peak : 1;
+  return arr.map(d => ({
+    ...d,
+    actual_pct:    d.actual    != null ? +((d.actual    / safe) * 100).toFixed(2) : null,
+    predicted_pct: d.predicted != null ? +((d.predicted / safe) * 100).toFixed(2) : null,
+    lower_pct:     d.lower     != null ? +((d.lower     / safe) * 100).toFixed(2) : null,
+    upper_pct:     d.upper     != null ? +((d.upper     / safe) * 100).toFixed(2) : null,
+  }));
+}
+
 // ── Safe parsers ──────────────────────────────────────────────────────────
 
 function parseNational(raw: any): { points: NationalPoint[]; accuracy: string; mape: string } {
   const accuracy = String(raw?.accuracy ?? raw?.accuracy_pct ?? "");
   const mape     = String(raw?.mean_mape ?? raw?.mean_mape_pct ?? "");
 
-  let arr: NationalPoint[] = [];
+  let base: Omit<NationalPoint, "actual_pct" | "predicted_pct" | "lower_pct" | "upper_pct">[] = [];
 
   if (Array.isArray(raw?.historical) || Array.isArray(raw?.forecast)) {
-    const histPoints: NationalPoint[] = (raw.historical ?? []).map((d: any) => ({
+    const histPoints = (raw.historical ?? []).map((d: any) => ({
       date:       fmtMonthYear(String(d.month ?? ""), Number(d.year ?? 0)),
       year:       Number(d.year ?? 0),
       month:      String(d.month ?? ""),
@@ -114,7 +134,7 @@ function parseNational(raw: any): { points: NationalPoint[]; accuracy: string; m
       oil_shock:  false,
     }));
 
-    const fcPoints: NationalPoint[] = (raw.forecast ?? []).map((d: any) => ({
+    const fcPoints = (raw.forecast ?? []).map((d: any) => ({
       date:       fmtMonthYear(String(d.month ?? ""), Number(d.year ?? 0)),
       year:       Number(d.year ?? 0),
       month:      String(d.month ?? ""),
@@ -127,20 +147,20 @@ function parseNational(raw: any): { points: NationalPoint[]; accuracy: string; m
       oil_shock:  Boolean(d.oil_shock ?? false),
     }));
 
-    arr = [...histPoints, ...fcPoints];
+    base = [...histPoints, ...fcPoints];
   } else {
     const fallbackArr: any[] = Array.isArray(raw)            ? raw
                              : Array.isArray(raw?.chartData) ? raw.chartData
                              : Array.isArray(raw?.data)      ? raw.data
                              : [];
 
-    arr = fallbackArr.map((d: any) => ({
+    base = fallbackArr.map((d: any) => ({
       date:       d.date ?? fmtMonthYear(String(d.month ?? ""), Number(d.year ?? 0)),
       year:       Number(d.year ?? 0),
       month:      String(d.month ?? ""),
       month_num:  Number(d.month_num ?? 0),
-      actual:     d.actual    != null ? Number(d.actual)    : d.total     != null ? Number(d.total)    : null,
-      predicted:  d.predicted != null ? Number(d.predicted) : d.forecast  != null ? Number(d.forecast) : null,
+      actual:     d.actual    != null ? Number(d.actual)    : d.total    != null ? Number(d.total)    : null,
+      predicted:  d.predicted != null ? Number(d.predicted) : d.forecast != null ? Number(d.forecast) : null,
       lower:      d.lower     != null ? Number(d.lower)     : null,
       upper:      d.upper     != null ? Number(d.upper)     : null,
       pct_change: d.pct_change != null ? Number(d.pct_change) : null,
@@ -148,19 +168,21 @@ function parseNational(raw: any): { points: NationalPoint[]; accuracy: string; m
     }));
   }
 
-  for (let i = 1; i < arr.length; i++) {
-    const prev = arr[i - 1].actual ?? arr[i - 1].predicted;
-    const curr = arr[i].actual     ?? arr[i].predicted;
+  // MoM % change
+  for (let i = 1; i < base.length; i++) {
+    const prev = base[i - 1].actual ?? base[i - 1].predicted;
+    const curr = base[i].actual     ?? base[i].predicted;
     if (prev != null && curr != null && prev !== 0) {
-      arr[i].pct_change = +((curr - prev) / prev * 100).toFixed(1);
+      base[i].pct_change = +((curr - prev) / prev * 100).toFixed(1);
     }
   }
 
-  arr = arr.map(d =>
+  // Oil shock flag
+  base = base.map(d =>
     d.month === "Mar" && d.year === 2026 ? { ...d, oil_shock: true } : d
   );
 
-  return { points: arr, accuracy, mape };
+  return { points: normalisePoints(base), accuracy, mape };
 }
 
 function parseSeasonal(raw: any): { data: SeasonalRow[]; peak: string; trough: string } {
@@ -194,11 +216,11 @@ function parseSeasonal(raw: any): { data: SeasonalRow[]; peak: string; trough: s
                            : [];
 
   const data: SeasonalRow[] = fallbackArr.map((d: any) => ({
-    month:       String(d.month ?? ""),
-    month_num:   Number(d.month_num ?? 0),
-    hist_avg:    d.hist_avg    != null ? Number(d.hist_avg)    : d.historical_avg != null ? Number(d.historical_avg) : null,
-    fc_avg:      d.fc_avg      != null ? Number(d.fc_avg)      : d.forecast_avg   != null ? Number(d.forecast_avg)   : null,
-    pct_change:  d.pct_change  != null ? Number(d.pct_change)  : null,
+    month:        String(d.month ?? ""),
+    month_num:    Number(d.month_num ?? 0),
+    hist_avg:     d.hist_avg    != null ? Number(d.hist_avg)    : d.historical_avg != null ? Number(d.historical_avg) : null,
+    fc_avg:       d.fc_avg      != null ? Number(d.fc_avg)      : d.forecast_avg   != null ? Number(d.forecast_avg)   : null,
+    pct_change:   d.pct_change  != null ? Number(d.pct_change)  : null,
     insufficient: Boolean(d.insufficient ?? false),
   }));
 
@@ -224,16 +246,16 @@ function parseScenarios(raw: any): { rows: ScenarioRow[]; baseline_M: number } {
   const baseline_M  = Number(raw?.baseline_M ?? baselineRaw?.adjusted_M ?? 0);
 
   const rows: ScenarioRow[] = arr.map((d: any) => {
-    const key = String(d.scenario ?? d.key ?? d.label ?? "").toLowerCase();
+    const key        = String(d.scenario ?? d.key ?? d.label ?? "").toLowerCase();
     const adjusted_M = Number(d.adjusted_M ?? d.predicted_M ?? 0);
-    const diffPct = baseline_M && key !== "baseline"
+    const diffPct    = baseline_M && key !== "baseline"
       ? +((adjusted_M - baseline_M) / baseline_M * 100).toFixed(1)
       : null;
     return {
       scenario:          key,
       label:             SCENARIO_LABEL_MAP[key] ?? String(d.label ?? d.name ?? key),
-      oil_change_pct:    Number(d.oil_change_pct    ?? d.oil_pct     ?? 0),
-      demand_change_pct: Number(d.demand_change_pct ?? d.demand_pct  ?? 0),
+      oil_change_pct:    Number(d.oil_change_pct    ?? d.oil_pct    ?? 0),
+      demand_change_pct: Number(d.demand_change_pct ?? d.demand_pct ?? 0),
       adjusted_M,
       diesel_php:        Number(d.diesel_php ?? 0),
       color:             SCENARIO_COLOR_MAP[key] ?? String(d.color ?? "#64748b"),
@@ -258,7 +280,7 @@ function computeYoY(
   return pVal ? +((cVal - pVal) / pVal * 100).toFixed(1) : null;
 }
 
-// ── Custom Tooltip ─────────────────────────────────────────────────────────
+// ── Custom Tooltip (% of peak, no millions) ────────────────────────────────
 
 function NationalTooltip({ active, payload, label }: any) {
   if (!active || !payload?.length) return null;
@@ -266,21 +288,21 @@ function NationalTooltip({ active, payload, label }: any) {
   return (
     <div style={S.tooltip}>
       <p style={{ color: "#0369a1", fontWeight: 700, marginBottom: 8, fontSize: 12 }}>{label}</p>
-      {d.actual != null && (
+      {d.actual_pct != null && (
         <p style={{ margin: "3px 0" }}>
           <span style={{ color: "#0369a1" }}>● Historical: </span>
-          <b style={{ color: "#0c4a6e" }}>{fmtM(d.actual)}</b>
+          <b style={{ color: "#0c4a6e" }}>{d.actual_pct.toFixed(1)}% of peak</b>
         </p>
       )}
-      {d.predicted != null && (
+      {d.predicted_pct != null && (
         <p style={{ margin: "3px 0" }}>
           <span style={{ color: "#ea580c" }}>◆ Forecast: </span>
-          <b style={{ color: "#0c4a6e" }}>{fmtM(d.predicted)}</b>
+          <b style={{ color: "#0c4a6e" }}>{d.predicted_pct.toFixed(1)}% of peak</b>
         </p>
       )}
-      {d.upper != null && d.lower != null && (
+      {d.upper_pct != null && d.lower_pct != null && (
         <p style={{ margin: "3px 0", color: "#0369a1", fontSize: 11 }}>
-          Band: {fmtM(d.lower)} – {fmtM(d.upper)}
+          Band: {d.lower_pct.toFixed(1)}% – {d.upper_pct.toFixed(1)}% of peak
         </p>
       )}
       {d.pct_change != null && (
@@ -310,15 +332,15 @@ function MonthYearTick({ x, y, payload, data }: any) {
 // ── Main Component ─────────────────────────────────────────────────────────
 
 export default function PricePredictionGraph() {
-  const [national,  setNational]  = useState<NationalPoint[]>([]);
-  const [seasonal,  setSeasonal]  = useState<{ data: SeasonalRow[]; peak: string; trough: string } | null>(null);
-  const [scenarios, setScenarios] = useState<{ rows: ScenarioRow[]; baseline_M: number } | null>(null);
-  const [accuracy,  setAccuracy]  = useState("—");
-  const [mape,      setMape]      = useState("—");
-  const [loading,   setLoading]   = useState(true);
-  const [error,     setError]     = useState<string | null>(null);
-  const [tab,       setTab]       = useState<"monthly" | "yearly" | "seasonal" | "scenarios">("monthly");
-  const [position,  setPosition]  = useState({ x: 0, y: 0 });
+  const [national,   setNational]   = useState<NationalPoint[]>([]);
+  const [seasonal,   setSeasonal]   = useState<{ data: SeasonalRow[]; peak: string; trough: string } | null>(null);
+  const [scenarios,  setScenarios]  = useState<{ rows: ScenarioRow[]; baseline_M: number } | null>(null);
+  const [accuracy,   setAccuracy]   = useState("—");
+  const [mape,       setMape]       = useState("—");
+  const [loading,    setLoading]    = useState(true);
+  const [error,      setError]      = useState<string | null>(null);
+  const [tab,        setTab]        = useState<"monthly" | "yearly" | "seasonal" | "scenarios">("monthly");
+  const [position,   setPosition]   = useState({ x: 0, y: 0 });
   const [isDragging, setIsDragging] = useState(false);
   const [dragStart,  setDragStart]  = useState({ x: 0, y: 0 });
   const containerRef = useRef<HTMLDivElement>(null);
@@ -414,6 +436,16 @@ export default function PricePredictionGraph() {
 
   const iranShockDate = "Mar 2026";
 
+  // Seasonal chart normalised to % of peak (so Y-axis is % too)
+  const seaPeak = seasonal
+    ? Math.max(...seasonal.data.map(r => Math.max(r.hist_avg ?? 0, r.fc_avg ?? 0)))
+    : 1;
+  const seaDataNorm = seasonal?.data.map(r => ({
+    ...r,
+    hist_pct: r.hist_avg != null && seaPeak > 0 ? +((r.hist_avg / seaPeak) * 100).toFixed(1) : null,
+    fc_pct:   r.fc_avg   != null && seaPeak > 0 ? +((r.fc_avg   / seaPeak) * 100).toFixed(1) : null,
+  })) ?? [];
+
   return (
     <div
       ref={containerRef}
@@ -445,10 +477,10 @@ export default function PricePredictionGraph() {
           <p style={S.subtitle}>XGBoost · 597 trees · 33 features · National + 27 PMOs</p>
         </div>
         <div style={S.kpiRow}>
-          <KPI label="ACCURACY"      value={accuracy} color="#22c55e" />
-          <KPI label="MEAN MAPE"     value={mape}     color="#fb923c" />
-          <KPI label="2026 YoY GROWTH" value={yoy2026 != null ? fmtPct(yoy2026) : "—"} color="#60a5fa" />
-          <KPI label="2027 YoY GROWTH" value={yoy2027 != null ? fmtPct(yoy2027) : "—"} color="#a78bfa" />
+          <KPI label="ACCURACY"        value={accuracy}                                        color="#22c55e" />
+          <KPI label="MEAN MAPE"       value={mape}                                            color="#fb923c" />
+          <KPI label="2026 YoY GROWTH" value={yoy2026 != null ? fmtPct(yoy2026) : "—"}        color="#60a5fa" />
+          <KPI label="2027 YoY GROWTH" value={yoy2027 != null ? fmtPct(yoy2027) : "—"}        color="#a78bfa" />
         </div>
       </div>
 
@@ -469,7 +501,7 @@ export default function PricePredictionGraph() {
         <div style={S.panel}>
           <SectionTitle
             title="National Monthly Passenger Trend (2016–2028)"
-            sub="Blue = historical actuals · Orange dashed = model forecast · Band = ±MAPE uncertainty"
+            sub="Y-axis = % of series peak · Blue = historical · Orange dashed = forecast · Band = ±MAPE"
           />
           <div style={S.shockBanner}>
             <span style={{ fontSize: 16 }}>🛢️</span>
@@ -497,6 +529,7 @@ export default function PricePredictionGraph() {
             </BarChart>
           </ResponsiveContainer>
 
+          {/* ── Main trend chart: Y-axis now % of peak ── */}
           <ResponsiveContainer width="100%" height={300}>
             <ComposedChart data={national} margin={{ top: 10, right: 10, left: 0, bottom: 25 }}>
               <defs>
@@ -517,13 +550,19 @@ export default function PricePredictionGraph() {
                 height={40}
                 label={{ value: "Month / Year", position: "insideBottom", offset: -10, fill: "#0369a1", fontSize: 11 }}
               />
-              <YAxis tickFormatter={fmtM} tick={{ fill: "#0369a1", fontSize: 10 }} />
+              {/* Y-axis: % of peak, no millions */}
+              <YAxis
+                tickFormatter={v => `${v.toFixed(0)}%`}
+                tick={{ fill: "#0369a1", fontSize: 10 }}
+                domain={[0, 100]}
+                label={{ value: "% of peak", angle: -90, position: "insideLeft", fill: "#0369a1", fontSize: 10, dx: 10 }}
+              />
               <Tooltip content={<NationalTooltip />} />
               <Legend iconType="circle" wrapperStyle={{ fontSize: 12, color: "#0369a1", fontWeight: 600 }} />
-              <Area dataKey="upper" stroke="none" fill="url(#gBand)" name="±MAPE band" legendType="rect" connectNulls dot={false} />
-              <Area dataKey="actual" name="Historical" stroke="#3b82f6" strokeWidth={2} fill="url(#gHist)" connectNulls dot={false} />
+              <Area dataKey="upper_pct"     stroke="none" fill="url(#gBand)" name="±MAPE band"  legendType="rect" connectNulls dot={false} />
+              <Area dataKey="actual_pct"    name="Historical" stroke="#3b82f6" strokeWidth={2}  fill="url(#gHist)" connectNulls dot={false} />
               <Line
-                dataKey="predicted" name="Forecast"
+                dataKey="predicted_pct" name="Forecast"
                 stroke="#fb923c" strokeWidth={2.5} strokeDasharray="6 3"
                 connectNulls
                 dot={(p: any) => p.payload?.oil_shock
@@ -541,14 +580,14 @@ export default function PricePredictionGraph() {
           {/* ── Key date callouts — percentage-based ── */}
           <div style={S.dateCallouts}>
             {[
-              { date: "Apr 2020", label: "COVID lockdown low",  value: "−97.5% vs 2019 avg", color: "#dc2626" },
-              { date: "2021→2024", label: "Post-COVID surge",   value: "+1,160% recovery",   color: "#0369a1" },
-              { date: "2025 (est.)", label: "vs 2024",
+              { date: "Apr 2020",     label: "COVID lockdown low", value: "−97.5% vs 2019 avg", color: "#dc2626" },
+              { date: "2021→2024",    label: "Post-COVID surge",   value: "+1,160% recovery",   color: "#0369a1" },
+              { date: "2025 (est.)",  label: "vs 2024",
                 value: yoy2025 != null ? fmtPct(yoy2025) + " YoY" : "—", color: "#0369a1" },
               { date: "2026 Forecast", label: "vs 2025",
                 value: yoy2026 != null ? fmtPct(yoy2026) + " YoY" : "—", color: "#ea580c" },
             ].map(c => (
-              <div key={c.date} style={{ ...S.dateChip }}>
+              <div key={c.date} style={S.dateChip}>
                 <p style={{ fontSize: 10, color: "#64748b", margin: "0 0 2px", letterSpacing: 0.5 }}>{c.date}</p>
                 <p style={{ fontSize: 15, fontWeight: 800, color: c.color, margin: "0 0 2px" }}>{c.value}</p>
                 <p style={{ fontSize: 10, color: "#0369a1", margin: 0 }}>{c.label}</p>
@@ -591,11 +630,11 @@ export default function PricePredictionGraph() {
           />
           <div style={S.yearCallouts}>
             {[
-              { year: "2020",      val: "−71% YoY",                                   label: "COVID collapse",   color: "#dc2626" },
-              { year: "2021→2024", val: "+1,160%",                                     label: "Full recovery",    color: "#0369a1" },
-              { year: "2025 (est.)", val: yoy2025 != null ? fmtPct(yoy2025) : "—",    label: "vs 2024",          color: "#0369a1" },
-              { year: "2026 fcst",   val: yoy2026 != null ? fmtPct(yoy2026) : "—",    label: "vs 2025",          color: "#ea580c" },
-              { year: "2027 fcst",   val: yoy2027 != null ? fmtPct(yoy2027) : "—",    label: "vs 2026",          color: "#7c3aed" },
+              { year: "2020",        val: "−71% YoY",                                label: "COVID collapse", color: "#dc2626" },
+              { year: "2021→2024",   val: "+1,160%",                                  label: "Full recovery",  color: "#0369a1" },
+              { year: "2025 (est.)", val: yoy2025 != null ? fmtPct(yoy2025) : "—",   label: "vs 2024",        color: "#0369a1" },
+              { year: "2026 fcst",   val: yoy2026 != null ? fmtPct(yoy2026) : "—",   label: "vs 2025",        color: "#ea580c" },
+              { year: "2027 fcst",   val: yoy2027 != null ? fmtPct(yoy2027) : "—",   label: "vs 2026",        color: "#7c3aed" },
             ].map(c => (
               <div key={c.year} style={{ ...S.yearCard, borderColor: c.color + "33" }}>
                 <p style={{ fontSize: 11, color: "#0c4a6e", margin: "0 0 4px", letterSpacing: 1, fontWeight: 700 }}>{c.year}</p>
@@ -631,7 +670,7 @@ export default function PricePredictionGraph() {
             <InsightCard icon="📉" title="COVID Collapse"
               body="2020 saw a −71% YoY drop — the sharpest single-year decline in Philippine ferry history, driven by nationwide lockdowns." />
             <InsightCard icon="🚀" title="Explosive Recovery"
-              body={`From the 2020 trough, ridership surged over +1,000% by 2024, driven by pent-up demand and restored inter-island routes.`} />
+              body="From the 2020 trough, ridership surged over +1,000% by 2024, driven by pent-up demand and restored inter-island routes." />
             <InsightCard icon="📈" title="2026–2027 Outlook"
               body={`Model forecasts ${yoy2026 != null ? fmtPct(yoy2026) : "—"} in 2026 and ${yoy2027 != null ? fmtPct(yoy2027) : "—"} in 2027 YoY, assuming no severe oil shock materialises.`} />
           </div>
@@ -643,7 +682,7 @@ export default function PricePredictionGraph() {
         <div style={S.panel}>
           <SectionTitle
             title="Seasonal Shape Index — Monthly vs Annual Average (%)"
-            sub="Each month's forecast vs the forecast annual average · Historical Δ% vs forecast Δ% comparison"
+            sub="Y-axis = % of seasonal peak · Shape index = each month vs forecast annual average"
           />
           <div style={S.contextNote}>
             <span style={{ fontSize: 16 }}>ℹ️</span>
@@ -673,25 +712,31 @@ export default function PricePredictionGraph() {
             />
           </div>
 
+          {/* ── Seasonal chart: Y-axis % of seasonal peak ── */}
           <ResponsiveContainer width="100%" height={250}>
-            <LineChart data={seasonal.data} margin={{ top: 10, right: 10, left: 0, bottom: 20 }}>
+            <LineChart data={seaDataNorm} margin={{ top: 10, right: 10, left: 0, bottom: 20 }}>
               <CartesianGrid strokeDasharray="3 3" stroke="#e0f2fe" />
               <XAxis dataKey="month" tick={{ fill: "#0369a1", fontSize: 12, fontWeight: 600 }} />
-              <YAxis tickFormatter={fmtM} tick={{ fill: "#0369a1", fontSize: 10 }} />
+              <YAxis
+                tickFormatter={v => `${v.toFixed(0)}%`}
+                tick={{ fill: "#0369a1", fontSize: 10 }}
+                domain={[0, 100]}
+                label={{ value: "% of peak", angle: -90, position: "insideLeft", fill: "#0369a1", fontSize: 10, dx: 10 }}
+              />
               <Tooltip
-                formatter={(v: any, name: any) => [fmtM(Number(v)), name]}
+                formatter={(v: any, name: any) => [`${Number(v).toFixed(1)}% of peak`, name]}
                 contentStyle={S.tt}
                 labelStyle={{ color: "#0c4a6e", fontWeight: 700 }}
               />
               <Legend wrapperStyle={{ fontSize: 12, color: "#0369a1", fontWeight: 600 }} />
               <Line
-                dataKey="hist_avg" name="Avg Historical (2016–2025)"
+                dataKey="hist_pct" name="Avg Historical (2016–2025)"
                 stroke="#0369a1" strokeWidth={2.5}
                 dot={{ r: 5, fill: "#0369a1", stroke: "#fff", strokeWidth: 2 }}
                 connectNulls
               />
               <Line
-                dataKey="fc_avg" name="Avg Forecast (2026–2027)"
+                dataKey="fc_pct" name="Avg Forecast (2026–2027)"
                 stroke="#ea580c" strokeWidth={2.5} strokeDasharray="6 3"
                 dot={{ r: 6, fill: "#ea580c", stroke: "#fff", strokeWidth: 2 }}
                 connectNulls
@@ -699,7 +744,7 @@ export default function PricePredictionGraph() {
             </LineChart>
           </ResponsiveContainer>
 
-          {/* ── Month-by-month comparison table ── */}
+          {/* ── Month-by-month table ── */}
           <p style={{ ...S.chartMeta, marginTop: 28 }}>Monthly Δ%: Historical Average → Forecast Average</p>
           <div style={S.seasonTable}>
             <div style={{ ...S.seasonRow, background: "#0369a1", borderRadius: "8px 8px 0 0" }}>
@@ -805,7 +850,6 @@ export default function PricePredictionGraph() {
                     </span>
                   )}
                 </div>
-                {/* Hero: demand % change */}
                 <p style={{ fontSize: 32, fontWeight: 800, color: "#0c4a6e", margin: "0 0 4px", fontVariantNumeric: "tabular-nums" }}>
                   {s.demand_change_pct >= 0 ? "+" : ""}{s.demand_change_pct}%
                 </p>
@@ -935,15 +979,11 @@ const S = {
     animation: "spin 0.9s linear infinite",
   } as React.CSSProperties,
   header: {
-    display: "flex",
-    flexDirection: "column" as const,
-    justifyContent: "space-between",
-    alignItems: "flex-start",
-    marginBottom: 20,
-    gap: 16,
+    display: "flex", flexDirection: "column" as const,
+    justifyContent: "space-between", alignItems: "flex-start",
+    marginBottom: 20, gap: 16,
     background: "linear-gradient(135deg, #0c4a6e 0%, #0369a1 100%)",
-    padding: "20px 16px",
-    borderRadius: "16px",
+    padding: "20px 16px", borderRadius: "16px",
     boxShadow: "0 10px 40px rgba(6, 105, 161, 0.15)",
   } as React.CSSProperties,
   eyebrow:  { fontSize: 9, letterSpacing: 2, color: "#e0f2fe", fontWeight: 700, margin: "0 0 6px" } as React.CSSProperties,
@@ -955,25 +995,16 @@ const S = {
     background: active ? "#0369a1" : "#ffffff",
     border: "none",
     color: active ? "#ffffff" : "#0c4a6e",
-    fontWeight: 700,
-    fontSize: "11px",
-    padding: "8px 12px",
-    cursor: "pointer",
-    borderRadius: "8px",
-    fontFamily: "inherit",
-    whiteSpace: "nowrap" as const,
-    flexShrink: 0,
+    fontWeight: 700, fontSize: "11px",
+    padding: "8px 12px", cursor: "pointer", borderRadius: "8px",
+    fontFamily: "inherit", whiteSpace: "nowrap" as const, flexShrink: 0,
     boxShadow: active ? "0 4px 12px rgba(6,105,161,0.25)" : "0 2px 4px rgba(0,0,0,0.05)",
     transition: "all 0.3s ease",
   } as React.CSSProperties),
   panel: {
-    background: "#ffffff",
-    borderRadius: "16px",
-    padding: "16px 12px",
-    border: "1px solid #bfdbfe",
-    boxShadow: "0 4px 12px rgba(0,0,0,0.05)",
-    width: "100%",
-    boxSizing: "border-box" as const,
+    background: "#ffffff", borderRadius: "16px", padding: "16px 12px",
+    border: "1px solid #bfdbfe", boxShadow: "0 4px 12px rgba(0,0,0,0.05)",
+    width: "100%", boxSizing: "border-box" as const,
   } as React.CSSProperties,
   shockBanner: {
     display: "flex", gap: 10, alignItems: "flex-start",
@@ -998,22 +1029,13 @@ const S = {
     padding: "12px", border: "1px solid #bfdbfe", textAlign: "center" as const,
   } as React.CSSProperties,
   insightGrid: {
-    display: "grid",
-    gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))",
-    gap: 12,
-    marginTop: 16,
+    display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))", gap: 12, marginTop: 16,
   } as React.CSSProperties,
   insightCard:  { background: "#f0f9ff", borderRadius: 12, padding: "12px", border: "1px solid #bfdbfe" } as React.CSSProperties,
   calloutRow:   { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 12, marginBottom: 16 } as React.CSSProperties,
   calloutCard: {
-    display: "flex",
-    flexDirection: "column" as const,
-    gap: 10,
-    alignItems: "flex-start",
-    background: "#f0f9ff",
-    borderRadius: 12,
-    padding: "12px",
-    border: "1px solid #bfdbfe",
+    display: "flex", flexDirection: "column" as const, gap: 10, alignItems: "flex-start",
+    background: "#f0f9ff", borderRadius: 12, padding: "12px", border: "1px solid #bfdbfe",
   } as React.CSSProperties,
   seasonTable:  { border: "1px solid #bfdbfe", borderRadius: 10, overflow: "hidden", marginBottom: 8, overflowX: "auto" as const } as React.CSSProperties,
   seasonRow:    { display: "grid", gridTemplateColumns: "minmax(60px,1fr) minmax(90px,1.2fr) minmax(90px,1.2fr) minmax(80px,1fr)", padding: "8px 12px", borderBottom: "1px solid #e0f2fe", minWidth: "100%" } as React.CSSProperties,
@@ -1040,6 +1062,7 @@ const S = {
     boxShadow: "0 10px 30px rgba(6, 105, 161, 0.12)", maxWidth: "200px",
   } as React.CSSProperties,
   tt: {
-    background: "#ffffff", border: "1px solid #bfdbfe", borderRadius: 12, fontSize: 10, color: "#0c4a6e", maxWidth: "180px",
+    background: "#ffffff", border: "1px solid #bfdbfe", borderRadius: 12,
+    fontSize: 10, color: "#0c4a6e", maxWidth: "180px",
   } as React.CSSProperties,
 };
