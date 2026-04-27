@@ -1,4 +1,4 @@
-import { LogOut, User, TrendingUpDownIcon, Cloud, DollarSign, Sailboat, Ticket, RotateCcw,Map, Bell } from "lucide-react"
+import { LogOut, User, TrendingUpDownIcon, Cloud, DollarSign, Sailboat, Ticket, RotateCcw,Map, AlertCircle } from "lucide-react"
 
 interface UserProfile {
   firstName: string
@@ -138,10 +138,10 @@ export default function BoatOperatorSidebar({
         <button
           className="w-full flex items-center justify-center lg:gap-2 px-1 lg:px-4 py-2.5 lg:py-3 bg-gradient-to-r from-amber-400 to-amber-500 hover:from-amber-500 hover:to-amber-600 text-white rounded-lg transition-all duration-200 font-semibold shadow-md hover:shadow-lg active:scale-95"
           onClick={onWeatherNotification}
-          title="Weather Notification"
+          title="Weather Caution - Shows alert only if weather is bad"
         >
-          <Bell className="w-4 h-4 lg:w-5 lg:h-5 flex-shrink-0" />
-          <span className="hidden lg:block text-sm">Weather Alerts</span>
+          <AlertCircle className="w-4 h-4 lg:w-5 lg:h-5 flex-shrink-0" />
+          <span className="hidden lg:block text-sm">Weather Caution</span>
         </button>
         <button
           className="w-full flex items-center justify-center lg:gap-2 px-1 lg:px-4 py-2.5 lg:py-3 bg-gradient-to-r from-red-500 to-red-600 hover:from-red-600 hover:to-red-700 text-white rounded-lg transition-all duration-200 font-semibold shadow-md hover:shadow-lg active:scale-95"
