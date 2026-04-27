@@ -1,4 +1,4 @@
-import { LogOut, User, Ship, Route, Cloud, Book, Ticket , TrendingUpDownIcon  } from "lucide-react"
+import { LogOut, User, Ship, Route, Cloud, Book, Ticket , TrendingUpDownIcon, Bell } from "lucide-react"
 
 interface UserProfile {
   firstName: string
@@ -14,6 +14,7 @@ interface SidebarProps {
   renderViewWeatherForecast?: () => void
   rendersupportTicket?: () => void
    renderFareAndSurgeRiskPrediction?: () => void
+  onWeatherNotification?: () => void
   goToProfile: () => void
 }
 
@@ -26,7 +27,8 @@ export default function UserSidebar({
   renderViewWeatherForecast,
   goToProfile,
   rendersupportTicket,
-  renderFareAndSurgeRiskPrediction
+  renderFareAndSurgeRiskPrediction,
+  onWeatherNotification
 }: SidebarProps) {
   return (
     <div className="fixed left-0 top-0 h-screen z-40 w-14 sm:w-16 lg:w-72 bg-white flex flex-col border-r border-slate-200 overflow-y-auto transition-all duration-200">
@@ -118,10 +120,18 @@ export default function UserSidebar({
         </li>
       </ul>
 
-      {/* Logout */}
-      <div className="p-1 lg:p-4 border-t border-slate-200 bg-gradient-to-t from-slate-50 to-white">
+      {/* Weather Notification & Logout */}
+      <div className="p-1 lg:p-4 border-t border-slate-200 bg-gradient-to-t from-slate-50 to-white space-y-2">
         <button
-          className="w-full flex items-center justify-center lg:gap-2 px-1 lg:px-4 py-2.5 lg:py-3 bg-gradient-to-r from-red-500 to-red-600 hover:from-red-600 hover:to-red-700 text-white rounded-lg transition-all duration-200 font-semibold shadow-md hover:shadow-lg"
+          className="w-full flex items-center justify-center lg:gap-2 px-1 lg:px-4 py-2.5 lg:py-3 bg-gradient-to-r from-amber-400 to-amber-500 hover:from-amber-500 hover:to-amber-600 text-white rounded-lg transition-all duration-200 font-semibold shadow-md hover:shadow-lg active:scale-95"
+          onClick={onWeatherNotification}
+          title="Weather Notification"
+        >
+          <Bell className="w-4 h-4 lg:w-5 lg:h-5 flex-shrink-0" />
+          <span className="hidden lg:block text-sm">Weather Alerts</span>
+        </button>
+        <button
+          className="w-full flex items-center justify-center lg:gap-2 px-1 lg:px-4 py-2.5 lg:py-3 bg-gradient-to-r from-red-500 to-red-600 hover:from-red-600 hover:to-red-700 text-white rounded-lg transition-all duration-200 font-semibold shadow-md hover:shadow-lg active:scale-95"
           onClick={onLogout}
           title="Logout"
         >
