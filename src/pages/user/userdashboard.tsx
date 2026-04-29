@@ -2,7 +2,7 @@ import { useState, useEffect, useMemo } from "react"
 import UserSidebar from "../../components/userdashboardsidebar.js"
 import {
   Bookmark, X, AlertTriangle, XCircle, CheckCircle,
-  Wind, Waves, Clock, RefreshCw, Droplets, Gauge, Thermometer
+  Wind, Waves, Clock, RefreshCw, Droplets, Gauge, Thermometer, SearchX
 } from "lucide-react"
 import { ViewBoatsCard } from "../../cards/viewboatscard.js"
 import { apiFetch } from "../../utils/apifetch.js"
@@ -433,6 +433,9 @@ export default function UserDashboard() {
   const [searchBoat, setSearchBoat]       = useState({ routeTo: "", routeFrom: "", departureTime: "", arrivalTime: "" })
   const [ticketSearch, setTicketSearch]   = useState("")
 
+  // ── NEW: track whether a search has been executed ──────────────────────────
+  const [hasSearched, setHasSearched] = useState(false)
+
   const filteredPendingBookings = useMemo(() =>
     pendingBookings.filter(b => {
       const s = ticketSearch.toLowerCase()
@@ -519,8 +522,17 @@ export default function UserDashboard() {
         `https://boatfinder.onrender.com/user/searchboats?${params.toString()}`,
         { method: "GET", credentials: "include" }
       )
-      setSearchResults(await res.json())
+      const data = await res.json()
+      setSearchResults(data)
+      setHasSearched(true)   // ← mark that a search was performed
     } catch (err) { console.error("Search error:", err) }
+  }
+
+  // ── NEW: clear search — resets filters and shows all boats ────────────────
+  function handleClearSearch() {
+    setSearchBoat({ routeTo: "", routeFrom: "", departureTime: "", arrivalTime: "" })
+    setSearchResults([])
+    setHasSearched(false)
   }
 
   const handleSearchChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
@@ -700,6 +712,10 @@ export default function UserDashboard() {
           "6:00 PM","7:00 PM","8:00 PM","9:00 PM","10:00 PM","11:00 PM",
         ]
 
+        // The list to show in the table: if searched and no results → show nothing (handled below)
+        const tableBoats = hasSearched ? searchResults : boats
+        const noResults  = hasSearched && searchResults.length === 0
+
         return (
           <div className="min-h-screen bg-gradient-to-br from-blue-50 to-blue-100 p-3 sm:p-8">
             <div className="max-w-6xl mx-auto">
@@ -730,6 +746,7 @@ export default function UserDashboard() {
                               arrivalTime: "",
                             }))
                             setSearchResults([])
+                            setHasSearched(false)
                           }}
                         >
                           <option value="">Select departure port</option>
@@ -755,6 +772,7 @@ export default function UserDashboard() {
                               arrivalTime: "",
                             }))
                             setSearchResults([])
+                            setHasSearched(false)
                           }}
                         >
                           <option value="">
@@ -814,78 +832,117 @@ export default function UserDashboard() {
                     </div>
                   </div>
 
+                  {/* ── Action buttons ────────────────────────────────────── */}
+                  <div className="flex flex-wrap gap-3">
+                    <button
+                      className="px-8 py-3 bg-blue-600 text-white font-semibold rounded-lg hover:bg-blue-700 transition-colors shadow-md text-sm sm:text-base"
+                      onClick={handleSearchBoat}
+                    >
+                      Search
+                    </button>
+
+                    {/* Clear button — only shown after a search has been performed */}
+                    {hasSearched && (
+                      <button
+                        className="px-8 py-3 bg-white text-blue-600 font-semibold rounded-lg border-2 border-blue-300 hover:bg-blue-50 transition-colors shadow-sm text-sm sm:text-base flex items-center gap-2"
+                        onClick={handleClearSearch}
+                      >
+                        <X className="w-4 h-4" />
+                        Clear
+                      </button>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              {/* ── Results Table / Not-Found State ───────────────────────── */}
+              {noResults ? (
+                // ── No boats found ──────────────────────────────────────────
+                <div className="bg-white rounded-lg shadow-lg p-10 flex flex-col items-center justify-center text-center gap-4">
+                  <div className="w-16 h-16 rounded-full bg-blue-50 flex items-center justify-center">
+                    <SearchX className="w-8 h-8 text-blue-400" />
+                  </div>
+                  <div>
+                    <p className="text-lg font-bold text-gray-800 mb-1">No boats found</p>
+                    <p className="text-gray-500 text-sm max-w-sm">
+                      No boats match your selected route or timeslot. Try adjusting your filters or
+                      click <span className="font-semibold text-blue-600">Clear</span> to see all available boats.
+                    </p>
+                  </div>
                   <button
-                    className="w-full sm:w-auto px-8 py-3 bg-blue-600 text-white font-semibold rounded-lg hover:bg-blue-700 transition-colors shadow-md text-sm sm:text-base"
-                    onClick={handleSearchBoat}
+                    className="mt-1 px-6 py-2.5 bg-blue-600 text-white font-semibold rounded-lg hover:bg-blue-700 transition-colors text-sm flex items-center gap-2"
+                    onClick={handleClearSearch}
                   >
-                    Search
+                    <X className="w-4 h-4" />
+                    Clear & Show All Boats
                   </button>
                 </div>
-              </div>
-
-              {/* ── Results Table ──────────────────────────────────────── */}
-              <div className="bg-white rounded-lg shadow-lg overflow-hidden">
-                <div className="overflow-x-auto">
-                  <table className="w-full min-w-[800px]">
-                    <thead>
-                      <tr className="bg-blue-600 text-white">
-                        {[
-                          "Boat ID", "Operator Name", "Boat Name", "Vessel Type",
-                          "Capacity", "Ticket Price", "Route From", "Route To",
-                          "Schedules", "Actions",
-                        ].map(h => (
-                          <th key={h} className="px-4 sm:px-6 py-4 text-left font-semibold text-sm">{h}</th>
-                        ))}
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {(searchResults.length > 0 ? searchResults : boats).map((boat: any) => (
-                        <tr key={boat.boatId || boat.boat_id} className="border-b hover:bg-gray-50">
-                          <td className="px-4 sm:px-7 py-4 sm:py-5 text-sm">{boat.boatId || boat.boat_id}</td>
-                          <td className="px-4 sm:px-7 py-4 sm:py-5 text-sm">{boat.operatorName}</td>
-                          <td className="px-4 sm:px-7 py-4 sm:py-5 text-sm">{boat.boatName || boat.boat_name}</td>
-                          <td className="px-4 sm:px-7 py-4 sm:py-5 text-sm">{boat.vesselType || boat.vessel_type}</td>
-                          <td className="px-4 sm:px-7 py-4 sm:py-5 text-sm">{boat.capacity || boat.capacity_information}</td>
-                          <td className="px-4 sm:px-7 py-4 sm:py-5 text-sm">{boat.ticketPrice || boat.ticket_price}</td>
-                          <td className="px-4 sm:px-7 py-4 sm:py-5 text-sm">{boat.routeFrom || boat.route_from}</td>
-                          <td className="px-4 sm:px-7 py-4 sm:py-5 text-sm">{boat.routeTo || boat.route_to}</td>
-
-                          {/* Schedules column */}
-                          <td className="px-4 sm:px-6 py-4 sm:py-5">
-                            {(() => {
-                              const sched = Array.isArray(boat.schedules) ? boat.schedules : []
-                              if (sched.length === 0) return (
-                                <span className="text-gray-400 italic text-xs">No schedules</span>
-                              )
-                              return (
-                                <div className="flex flex-col gap-1">
-                                  {sched.map((s: any, i: number) => (
-                                    <span
-                                      key={i}
-                                      className="inline-flex items-center gap-1 text-xs bg-blue-50 border border-blue-200 text-blue-700 rounded-md px-2 py-0.5 whitespace-nowrap"
-                                    >
-                                      🕐 {s.departureTime} → {s.arrivalTime}
-                                    </span>
-                                  ))}
-                                </div>
-                              )
-                            })()}
-                          </td>
-
-                          <td className="px-4 sm:px-6 py-4">
-                            <button
-                              className="bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white px-3 sm:px-4 py-2 rounded-lg font-medium flex items-center gap-2 transition-colors text-sm whitespace-nowrap"
-                              onClick={() => navigate(`/bookboat/${boat.boatId || boat.boat_id}`)}
-                            >
-                              <Bookmark className="w-4 h-4" />Book Trip
-                            </button>
-                          </td>
+              ) : (
+                // ── Boats table ─────────────────────────────────────────────
+                <div className="bg-white rounded-lg shadow-lg overflow-hidden">
+                  <div className="overflow-x-auto">
+                    <table className="w-full min-w-[800px]">
+                      <thead>
+                        <tr className="bg-blue-600 text-white">
+                          {[
+                            "Boat ID", "Operator Name", "Boat Name", "Vessel Type",
+                            "Capacity", "Ticket Price", "Route From", "Route To",
+                            "Schedules", "Actions",
+                          ].map(h => (
+                            <th key={h} className="px-4 sm:px-6 py-4 text-left font-semibold text-sm">{h}</th>
+                          ))}
                         </tr>
-                      ))}
-                    </tbody>
-                  </table>
+                      </thead>
+                      <tbody>
+                        {tableBoats.map((boat: any) => (
+                          <tr key={boat.boatId || boat.boat_id} className="border-b hover:bg-gray-50">
+                            <td className="px-4 sm:px-7 py-4 sm:py-5 text-sm">{boat.boatId || boat.boat_id}</td>
+                            <td className="px-4 sm:px-7 py-4 sm:py-5 text-sm">{boat.operatorName}</td>
+                            <td className="px-4 sm:px-7 py-4 sm:py-5 text-sm">{boat.boatName || boat.boat_name}</td>
+                            <td className="px-4 sm:px-7 py-4 sm:py-5 text-sm">{boat.vesselType || boat.vessel_type}</td>
+                            <td className="px-4 sm:px-7 py-4 sm:py-5 text-sm">{boat.capacity || boat.capacity_information}</td>
+                            <td className="px-4 sm:px-7 py-4 sm:py-5 text-sm">{boat.ticketPrice || boat.ticket_price}</td>
+                            <td className="px-4 sm:px-7 py-4 sm:py-5 text-sm">{boat.routeFrom || boat.route_from}</td>
+                            <td className="px-4 sm:px-7 py-4 sm:py-5 text-sm">{boat.routeTo || boat.route_to}</td>
+
+                            {/* Schedules column — clock icon removed */}
+                            <td className="px-4 sm:px-6 py-4 sm:py-5">
+                              {(() => {
+                                const sched = Array.isArray(boat.schedules) ? boat.schedules : []
+                                if (sched.length === 0) return (
+                                  <span className="text-gray-400 italic text-xs">No schedules</span>
+                                )
+                                return (
+                                  <div className="flex flex-col gap-1">
+                                    {sched.map((s: any, i: number) => (
+                                      <span
+                                        key={i}
+                                        className="inline-flex items-center gap-1 text-xs bg-blue-50 border border-blue-200 text-blue-700 rounded-md px-2 py-0.5 whitespace-nowrap"
+                                      >
+                                        {/* 🕐 icon removed */}
+                                        {s.departureTime} → {s.arrivalTime}
+                                      </span>
+                                    ))}
+                                  </div>
+                                )
+                              })()}
+                            </td>
+
+                            <td className="px-4 sm:px-6 py-4">
+                              <button
+                                className="bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white px-3 sm:px-4 py-2 rounded-lg font-medium flex items-center gap-2 transition-colors text-sm whitespace-nowrap"
+                                onClick={() => navigate(`/bookboat/${boat.boatId || boat.boat_id}`)}
+                              >
+                                <Bookmark className="w-4 h-4" />Book Trip
+                              </button>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
                 </div>
-              </div>
+              )}
 
             </div>
           </div>
