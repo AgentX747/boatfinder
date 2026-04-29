@@ -241,36 +241,62 @@ async function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
                                 onChange={handleInputChange}
                             />
                         </div>
-                       {/* Route From */}
+                      {/* Route From */}
 <div className="mb-6">
   <label htmlFor="routeFrom" className="block text-sm font-semibold text-gray-700 mb-2">
-    Route From
+    Route From *
   </label>
-  <input 
-    type="text" 
-    id="routeFrom" 
-    name="routeFrom" 
+  <select
+    id="routeFrom"
+    name="routeFrom"
     required
     className="w-full px-4 py-3 border-2 border-gray-300 rounded-lg focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100 transition"
     value={boatForm.routeFrom}
-    onChange={handleInputChange}
-  />
+    onChange={(e) => {
+      setBoatForm((prev) => ({ ...prev, routeFrom: e.target.value, routeTo: "" }));
+    }}
+  >
+    <option value="">Select departure port</option>
+    <option value="Marigondon Port">Marigondon Port</option>
+    <option value="Hilton">Hilton</option>
+    <option value="Angasil Port">Angasil Port</option>
+  </select>
 </div>
 
 {/* Route To */}
 <div className="mb-6">
   <label htmlFor="routeTo" className="block text-sm font-semibold text-gray-700 mb-2">
-    Route To
+    Route To *
   </label>
-  <input 
-    type="text" 
-    id="routeTo" 
-    name="routeTo" 
+  <select
+    id="routeTo"
+    name="routeTo"
     required
-    className="w-full px-4 py-3 border-2 border-gray-300 rounded-lg focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100 transition"
+    disabled={!boatForm.routeFrom}
+    className="w-full px-4 py-3 border-2 border-gray-300 rounded-lg focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100 transition disabled:bg-gray-100 disabled:text-gray-400 disabled:cursor-not-allowed"
     value={boatForm.routeTo}
     onChange={handleInputChange}
-  />
+  >
+    <option value="">
+      {boatForm.routeFrom ? "Select destination" : "Select departure first"}
+    </option>
+
+    {boatForm.routeFrom === "Marigondon Port" && (
+      <>
+        <option value="Pangan-an Island">Pangan-an Island</option>
+        <option value="Cawhagan">Cawhagan</option>
+        <option value="Olango">Olango</option>
+      </>
+    )}
+
+    {boatForm.routeFrom === "Hilton" && (
+      <option value="Olango">Olango</option>
+    )}
+
+    {boatForm.routeFrom === "Angasil Port" && (
+      <option value="Olango">Olango</option>
+    )}
+  </select>
 </div>
 <div className="mb-6">
   <div className="flex items-center justify-between mb-3">
