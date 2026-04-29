@@ -47,7 +47,7 @@ let matrix = {}
 export async function getAllBoats() {
   return withCache('boats:all', BOATS_TTL, async () => {
     const [boats] = await connection.execute<BoatRow[]>(
-      `SELECT b.boat_id, b.boat_name, b.vessel_type, b.image,
+      `SELECT b.boat_id, b.boat_name, b.vessel_type, b.image,b.schedules,
               b.capacity_information, b.route_from, b.route_to,
               b.schedules, b.ticket_price,
               CONCAT(bo.firstName, ' ', bo.lastName) AS operatorName

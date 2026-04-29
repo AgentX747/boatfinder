@@ -49,25 +49,33 @@ interface DayClassification {
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Backend /weather/getweatherdata response shape
-// (from weatherDataController → getWeatherData())
-// Shape: { current: CurrentData, hourly: HourlyData[], daily: DailyData[] }
 // ─────────────────────────────────────────────────────────────────────────────
 interface BackendCurrentWeather {
-  time: string                // new Date(current.last_updated)
-  temperature_c: number       // current.temp_c
-  temperature_f: number       // current.temp_f
-  feels_like_c: number        // current.feelslike_c
-  precipitation_mm: number    // current.precip_mm
-  wind_kph: number            // current.wind_kph
-  wind_dir: string            // current.wind_dir
-  gust_kph: number            // current.gust_kph
-  pressure_mb: number         // current.pressure_mb
-  cloud_percent: number       // current.cloud
-  condition: string           // current.condition.text
+  time: string
+  temperature_c: number
+  temperature_f: number
+  feels_like_c: number
+  precipitation_mm: number
+  wind_kph: number
+  wind_dir: string
+  gust_kph: number
+  pressure_mb: number
+  cloud_percent: number
+  condition: string
 }
 
 // ── Cancel modal type ─────────────────────────────────────────────────────────
 type CancelModalType = "decline" | "cancel" | null
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Route map: routeFrom → allowed routeTo values
+// ─────────────────────────────────────────────────────────────────────────────
+const ROUTE_MAP: Record<string, string[]> = {
+  "Marigondon Port": ["Pangan-an Island", "Cawhagan", "Olango"],
+  "Hilton":          ["Olango"],
+  "Angasil Port":    ["Olango"],
+}
+const DEPARTURE_PORTS = Object.keys(ROUTE_MAP)
 
 // ─────────────────────────────────────────────────────────────────────────────
 // ClassificationBadge
@@ -101,13 +109,6 @@ function formatDate(dateStr: string) {
 
 // ─────────────────────────────────────────────────────────────────────────────
 // WeatherCautionModal
-// Fetches:
-//   1. GET /weather/airesponse     → Sealegs SpotCast { daily_classifications }
-//   2. GET /weather/getweatherdata → WeatherAPI cache  { current, hourly, daily }
-//
-// The current weather strip reads the BACKEND field names from getWeatherData():
-//   temperature_c, temperature_f, feels_like_c, wind_kph, wind_dir,
-//   gust_kph, precipitation_mm, cloud_percent, pressure_mb, condition
 // ─────────────────────────────────────────────────────────────────────────────
 interface WeatherCautionModalProps {
   open: boolean
@@ -126,7 +127,6 @@ function WeatherCautionModal({ open, onClose }: WeatherCautionModalProps) {
     setLoading(true)
     setError(null)
     try {
-      // ── Parallel fetch: SpotCast AI + WeatherAPI current conditions ──
       const [spotRes, weatherRes] = await Promise.all([
         fetch("https://boatfinder.onrender.com/weather/airesponse", {
           method: "GET", credentials: "include",
@@ -136,32 +136,19 @@ function WeatherCautionModal({ open, onClose }: WeatherCautionModalProps) {
         }),
       ])
 
-      // ── 1. Sealegs SpotCast daily classifications ──────────────────
       if (!spotRes.ok) throw new Error(`SpotCast fetch failed (${spotRes.status})`)
       const spotData = await spotRes.json()
       const days: DayClassification[] = spotData.daily_classifications ?? []
       setAllDays(days)
       setAlertDays(days.filter(d => isAlertClass(d.classification)))
 
-      // ── 2. WeatherAPI current conditions (best-effort) ──────────────
-      // Backend returns: { current: BackendCurrentWeather, hourly: [], daily: [] }
-      // Field names come from getWeatherData() in weatherservice.ts:
-      //   temperature_c, temperature_f, feels_like_c, precipitation_mm,
-      //   wind_kph, wind_dir, gust_kph, pressure_mb, cloud_percent, condition
       if (weatherRes.ok) {
         const wData = await weatherRes.json()
-
-        // Handle both possible shapes from the backend:
-        // Shape A (backend-transformed): wData.current has BackendCurrentWeather fields
-        // Shape B (raw WeatherAPI passthrough): wData.current has temp_f, condition.text etc.
         if (wData.current) {
           const c = wData.current
-
           if (c.temperature_c !== undefined) {
-            // Shape A — backend-transformed (expected from weatherDataController)
             setCurrentWeather(c as BackendCurrentWeather)
           } else if (c.temp_f !== undefined) {
-            // Shape B — raw WeatherAPI passthrough, remap to backend shape
             setCurrentWeather({
               time:             c.last_updated ?? new Date().toISOString(),
               temperature_c:    Math.round((c.temp_f - 32) * 5 / 9),
@@ -204,13 +191,10 @@ function WeatherCautionModal({ open, onClose }: WeatherCautionModalProps) {
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-6">
-      {/* Backdrop */}
       <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={onClose} />
-
-      {/* Modal panel */}
       <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-xl max-h-[90vh] flex flex-col overflow-hidden border border-slate-200">
 
-        {/* ── Header ────────────────────────────────────────────────── */}
+        {/* Header */}
         <div className={`bg-gradient-to-r ${headerGradient} px-5 sm:px-6 py-4 sm:py-5 flex items-start gap-3`}>
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-2 mb-0.5">
@@ -243,15 +227,9 @@ function WeatherCautionModal({ open, onClose }: WeatherCautionModalProps) {
           </div>
         </div>
 
-        {/* ── Current conditions strip ───────────────────────────────
-            Reads backend field names from getWeatherData():
-            temperature_c, temperature_f, feels_like_c, wind_kph,
-            wind_dir, gust_kph, precipitation_mm, cloud_percent,
-            pressure_mb, condition
-        ────────────────────────────────────────────────────────── */}
+        {/* Current conditions strip */}
         {!loading && currentWeather && (
           <div className="px-5 py-3 bg-slate-50 border-b border-slate-200">
-            {/* Condition label + temperature */}
             <div className="flex items-center justify-between mb-2">
               <span className="font-semibold text-slate-800 text-sm">{currentWeather.condition}</span>
               <span className="text-slate-700 font-bold text-sm">
@@ -259,10 +237,7 @@ function WeatherCautionModal({ open, onClose }: WeatherCautionModalProps) {
                 <span className="text-slate-400 font-normal text-xs ml-1">/ {currentWeather.temperature_f}°F</span>
               </span>
             </div>
-
-            {/* Stats grid */}
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs">
-              {/* Wind */}
               <div className="flex items-center gap-1.5 text-slate-600">
                 <Wind className="w-3.5 h-3.5 text-blue-500 flex-shrink-0" />
                 <span>
@@ -270,34 +245,24 @@ function WeatherCautionModal({ open, onClose }: WeatherCautionModalProps) {
                   <span className="text-slate-400 ml-1">{currentWeather.wind_dir}</span>
                 </span>
               </div>
-
-              {/* Gusts */}
               {currentWeather.gust_kph > 0 && (
                 <div className="flex items-center gap-1.5 text-slate-600">
                   <Waves className="w-3.5 h-3.5 text-cyan-500 flex-shrink-0" />
                   <span>Gusts <span className="font-medium">{currentWeather.gust_kph} kph</span></span>
                 </div>
               )}
-
-              {/* Feels like */}
               <div className="flex items-center gap-1.5 text-slate-600">
                 <Thermometer className="w-3.5 h-3.5 text-orange-400 flex-shrink-0" />
                 <span>Feels <span className="font-medium">{currentWeather.feels_like_c}°C</span></span>
               </div>
-
-              {/* Pressure */}
               <div className="flex items-center gap-1.5 text-slate-600">
                 <Gauge className="w-3.5 h-3.5 text-purple-400 flex-shrink-0" />
                 <span><span className="font-medium">{currentWeather.pressure_mb}</span> mb</span>
               </div>
-
-              {/* Cloud cover */}
               <div className="flex items-center gap-1.5 text-slate-600">
                 <span className="text-slate-400">☁</span>
                 <span>Cloud <span className="font-medium">{currentWeather.cloud_percent}%</span></span>
               </div>
-
-              {/* Rain — only if precipitating */}
               {currentWeather.precipitation_mm > 0 && (
                 <div className="flex items-center gap-1.5 text-blue-600">
                   <Droplets className="w-3.5 h-3.5 flex-shrink-0" />
@@ -308,18 +273,14 @@ function WeatherCautionModal({ open, onClose }: WeatherCautionModalProps) {
           </div>
         )}
 
-        {/* ── Body ──────────────────────────────────────────────────── */}
+        {/* Body */}
         <div className="flex-1 overflow-y-auto">
-
-          {/* Loading */}
           {loading && (
             <div className="flex flex-col items-center justify-center py-16 gap-3">
               <RefreshCw className="w-8 h-8 text-blue-400 animate-spin" />
               <p className="text-slate-500 text-sm">Loading Sealegs SpotCast data…</p>
             </div>
           )}
-
-          {/* Error */}
           {!loading && error && (
             <div className="m-4 p-4 rounded-xl bg-red-50 border border-red-200 flex items-start gap-3">
               <XCircle className="w-5 h-5 text-red-500 flex-shrink-0 mt-0.5" />
@@ -333,8 +294,6 @@ function WeatherCautionModal({ open, onClose }: WeatherCautionModalProps) {
               </div>
             </div>
           )}
-
-          {/* All clear */}
           {!loading && !error && alertDays.length === 0 && allDays.length > 0 && (
             <div className="flex flex-col items-center justify-center py-12 px-6 text-center gap-3">
               <div className="w-14 h-14 rounded-full bg-green-100 flex items-center justify-center">
@@ -354,12 +313,8 @@ function WeatherCautionModal({ open, onClose }: WeatherCautionModalProps) {
               </button>
             </div>
           )}
-
-          {/* Day cards */}
           {!loading && !error && displayDays.length > 0 && (
             <div className="p-4 sm:p-5 space-y-3">
-
-              {/* Toggle all / alerts-only */}
               {allDays.length > alertDays.length && (
                 <div className="flex items-center justify-between mb-1">
                   <p className="text-xs text-slate-500 font-medium">
@@ -373,7 +328,6 @@ function WeatherCautionModal({ open, onClose }: WeatherCautionModalProps) {
                   </button>
                 </div>
               )}
-
               {displayDays.map((day, i) => {
                 const cls      = normalizeClass(day.classification)
                 const isNogo   = cls === "NO-GO"
@@ -383,11 +337,8 @@ function WeatherCautionModal({ open, onClose }: WeatherCautionModalProps) {
                                :          "bg-green-50 border-green-200"
                 const textMain = isNogo ? "text-red-900"  : isCaut ? "text-amber-900"  : "text-green-900"
                 const textSub  = isNogo ? "text-red-700"  : isCaut ? "text-amber-700"  : "text-green-700"
-
                 return (
                   <div key={`${day.date}-${i}`} className={`rounded-xl border p-4 ${cardBg}`}>
-
-                    {/* Card header */}
                     <div className="flex items-start justify-between gap-2 mb-2 flex-wrap">
                       <div className="flex items-center gap-2 flex-wrap">
                         <ClassificationBadge raw={day.classification} />
@@ -397,13 +348,9 @@ function WeatherCautionModal({ open, onClose }: WeatherCautionModalProps) {
                         </span>
                       </div>
                     </div>
-
-                    {/* Short summary */}
                     <p className={`text-sm font-semibold ${textMain} leading-snug mb-1`}>
                       {day.short_summary || day.summary}
                     </p>
-
-                    {/* Full summary — collapsible */}
                     {day.summary && day.summary !== day.short_summary && (
                       <details className="mt-1">
                         <summary className={`text-xs cursor-pointer select-none font-medium ${textSub} hover:underline`}>
@@ -414,8 +361,6 @@ function WeatherCautionModal({ open, onClose }: WeatherCautionModalProps) {
                         </p>
                       </details>
                     )}
-
-                    {/* Trip cancellation warning — CAUTION and NO-GO only */}
                     {(isNogo || isCaut) && (
                       <div className={`mt-3 flex items-center gap-1.5 text-xs font-semibold ${textMain} opacity-80`}>
                         <Waves className="w-3.5 h-3.5 flex-shrink-0" />
@@ -431,7 +376,7 @@ function WeatherCautionModal({ open, onClose }: WeatherCautionModalProps) {
           )}
         </div>
 
-        {/* ── Footer ────────────────────────────────────────────────── */}
+        {/* Footer */}
         {!loading && !error && (
           <div className="px-5 py-3 border-t border-slate-100 bg-slate-50 flex items-center justify-between gap-3">
             <p className="text-xs text-slate-400">Powered by Sealegs SpotCast AI</p>
@@ -475,10 +420,8 @@ export default function UserDashboard() {
   const [bookingHistory, setBookingHistory]     = useState<any[]>([])
   const [acceptedBookings, setAcceptedBookings] = useState<any[]>([])
 
-  // ── Weather caution modal ─────────────────────────────────────────────────
   const [weatherModalOpen, setWeatherModalOpen] = useState(false)
 
-  // ── Unified cancel / decline modal ───────────────────────────────────────
   const [cancelModalType, setCancelModalType]     = useState<CancelModalType>(null)
   const [cancelBookingId, setCancelBookingId]     = useState<string | null>(null)
   const [cancelBookingCode, setCancelBookingCode] = useState<string>("")
@@ -716,71 +659,181 @@ export default function UserDashboard() {
 
   function renderActiveTab() {
     switch (activeTab) {
+
+      // ── Search Route & Timeslot ──────────────────────────────────────────
       case "searchrouteandtimeslot": {
-        const timeSlots = [
+
+        // Derive available schedule slots from boats matching the current route selection
+        const activeBoats = searchResults.length > 0 ? searchResults : boats
+        const matchingBoats = activeBoats.filter((boat: any) => {
+          const from = boat.routeFrom ?? boat.route_from ?? ""
+          const to   = boat.routeTo   ?? boat.route_to   ?? ""
+          return (
+            (!searchBoat.routeFrom || from === searchBoat.routeFrom) &&
+            (!searchBoat.routeTo   || to   === searchBoat.routeTo)
+          )
+        })
+
+        const allSlots: { departureTime: string; arrivalTime: string }[] = []
+        matchingBoats.forEach((boat: any) => {
+          const sched = Array.isArray(boat.schedules) ? boat.schedules : []
+          sched.forEach((s: any) => {
+            const dep = s.departureTime ?? ""
+            const arr = s.arrivalTime   ?? ""
+            if (dep && !allSlots.some(x => x.departureTime === dep && x.arrivalTime === arr)) {
+              allSlots.push({ departureTime: dep, arrivalTime: arr })
+            }
+          })
+        })
+
+        const depTimes = [...new Set(allSlots.map(s => s.departureTime))]
+        const arrTimes = [...new Set(
+          allSlots
+            .filter(s => !searchBoat.departureTime || s.departureTime === searchBoat.departureTime)
+            .map(s => s.arrivalTime)
+        )]
+
+        const fallbackTimes = [
           "12:00 AM","1:00 AM","2:00 AM","3:00 AM","4:00 AM","5:00 AM",
           "6:00 AM","7:00 AM","8:00 AM","9:00 AM","10:00 AM","11:00 AM",
           "12:00 PM","1:00 PM","2:00 PM","3:00 PM","4:00 PM","5:00 PM",
           "6:00 PM","7:00 PM","8:00 PM","9:00 PM","10:00 PM","11:00 PM",
         ]
+
         return (
           <div className="min-h-screen bg-gradient-to-br from-blue-50 to-blue-100 p-3 sm:p-8">
             <div className="max-w-6xl mx-auto">
               <div className="bg-white rounded-lg shadow-lg p-4 sm:p-8 mb-6 sm:mb-8">
                 <h1 className="text-2xl sm:text-3xl font-bold text-blue-600 mb-2">Search Route and Timeslot</h1>
                 <p className="text-gray-600 mb-6 text-sm sm:text-base">Here you can search for available boat routes and timeslots.</p>
+
                 <div className="space-y-6">
+
+                  {/* ── Route ───────────────────────────────────────────── */}
                   <div>
                     <h2 className="text-xl sm:text-2xl font-semibold text-blue-600 mb-4">Route</h2>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+
+                      {/* Origin — dropdown */}
                       <div>
                         <label className="block text-sm font-medium text-gray-700 mb-2">Origin</label>
-                        <input type="text" name="routeFrom" placeholder="Enter origin port"
-                          className="w-full px-4 py-2 border border-blue-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm sm:text-base"
-                          value={searchBoat.routeFrom} onChange={handleSearchChange} />
+                        <select
+                          name="routeFrom"
+                          className="w-full px-4 py-2 border border-blue-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white text-sm sm:text-base"
+                          value={searchBoat.routeFrom}
+                          onChange={(e) => {
+                            setSearchBoat(prev => ({
+                              ...prev,
+                              routeFrom: e.target.value,
+                              routeTo: "",
+                              departureTime: "",
+                              arrivalTime: "",
+                            }))
+                            setSearchResults([])
+                          }}
+                        >
+                          <option value="">Select departure port</option>
+                          {DEPARTURE_PORTS.map(port => (
+                            <option key={port} value={port}>{port}</option>
+                          ))}
+                        </select>
                       </div>
+
+                      {/* Destination — dropdown filtered by Origin */}
                       <div>
                         <label className="block text-sm font-medium text-gray-700 mb-2">Destination</label>
-                        <input type="text" name="routeTo" placeholder="Enter destination port"
-                          className="w-full px-4 py-2 border border-blue-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm sm:text-base"
-                          value={searchBoat.routeTo} onChange={handleSearchChange} />
+                        <select
+                          name="routeTo"
+                          disabled={!searchBoat.routeFrom}
+                          className="w-full px-4 py-2 border border-blue-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white text-sm sm:text-base disabled:bg-gray-100 disabled:text-gray-400 disabled:cursor-not-allowed"
+                          value={searchBoat.routeTo}
+                          onChange={(e) => {
+                            setSearchBoat(prev => ({
+                              ...prev,
+                              routeTo: e.target.value,
+                              departureTime: "",
+                              arrivalTime: "",
+                            }))
+                            setSearchResults([])
+                          }}
+                        >
+                          <option value="">
+                            {searchBoat.routeFrom ? "Select destination" : "Select origin first"}
+                          </option>
+                          {(ROUTE_MAP[searchBoat.routeFrom] ?? []).map(dest => (
+                            <option key={dest} value={dest}>{dest}</option>
+                          ))}
+                        </select>
                       </div>
                     </div>
                   </div>
+
+                  {/* ── Timeslot ─────────────────────────────────────────── */}
                   <div>
                     <h3 className="text-lg sm:text-xl font-semibold text-blue-600 mb-4">Timeslot</h3>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+
+                      {/* Departure Time */}
                       <div>
                         <label className="block text-sm font-medium text-gray-700 mb-2">Departure Time</label>
-                        <select name="departureTime"
+                        <select
+                          name="departureTime"
                           className="w-full px-4 py-2 border border-blue-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white text-sm sm:text-base"
-                          value={searchBoat.departureTime} onChange={handleSearchChange}>
+                          value={searchBoat.departureTime}
+                          onChange={(e) => setSearchBoat(prev => ({
+                            ...prev,
+                            departureTime: e.target.value,
+                            arrivalTime: "",
+                          }))}
+                        >
                           <option value="">Select departure time</option>
-                          {timeSlots.map((t, i) => <option key={`dep-${i}`} value={t}>{t}</option>)}
+                          {(depTimes.length > 0 ? depTimes : fallbackTimes).map((t, i) => (
+                            <option key={`dep-${i}`} value={t}>{t}</option>
+                          ))}
                         </select>
                       </div>
+
+                      {/* Arrival Time — filtered by selected departure */}
                       <div>
                         <label className="block text-sm font-medium text-gray-700 mb-2">Arrival Time</label>
-                        <select name="arrivalTime"
-                          className="w-full px-4 py-2 border border-blue-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white text-sm sm:text-base"
-                          value={searchBoat.arrivalTime} onChange={handleSearchChange}>
-                          <option value="">Select arrival time</option>
-                          {timeSlots.map((t, i) => <option key={`arr-${i}`} value={t}>{t}</option>)}
+                        <select
+                          name="arrivalTime"
+                          disabled={!searchBoat.departureTime}
+                          className="w-full px-4 py-2 border border-blue-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white text-sm sm:text-base disabled:bg-gray-100 disabled:text-gray-400 disabled:cursor-not-allowed"
+                          value={searchBoat.arrivalTime}
+                          onChange={handleSearchChange}
+                        >
+                          <option value="">
+                            {searchBoat.departureTime ? "Select arrival time" : "Select departure first"}
+                          </option>
+                          {(arrTimes.length > 0 ? arrTimes : fallbackTimes).map((t, i) => (
+                            <option key={`arr-${i}`} value={t}>{t}</option>
+                          ))}
                         </select>
                       </div>
                     </div>
                   </div>
+
                   <button
                     className="w-full sm:w-auto px-8 py-3 bg-blue-600 text-white font-semibold rounded-lg hover:bg-blue-700 transition-colors shadow-md text-sm sm:text-base"
-                    onClick={handleSearchBoat}>Search</button>
+                    onClick={handleSearchBoat}
+                  >
+                    Search
+                  </button>
                 </div>
               </div>
+
+              {/* ── Results Table ──────────────────────────────────────── */}
               <div className="bg-white rounded-lg shadow-lg overflow-hidden">
                 <div className="overflow-x-auto">
-                  <table className="w-full min-w-[640px]">
+                  <table className="w-full min-w-[800px]">
                     <thead>
                       <tr className="bg-blue-600 text-white">
-                        {["Boat ID","Operator Name","Boat Name","Vessel Type","Capacity","Ticket Price","Route From","Route To","Actions"].map(h => (
+                        {[
+                          "Boat ID", "Operator Name", "Boat Name", "Vessel Type",
+                          "Capacity", "Ticket Price", "Route From", "Route To",
+                          "Schedules", "Actions",
+                        ].map(h => (
                           <th key={h} className="px-4 sm:px-6 py-4 text-left font-semibold text-sm">{h}</th>
                         ))}
                       </tr>
@@ -796,10 +849,34 @@ export default function UserDashboard() {
                           <td className="px-4 sm:px-7 py-4 sm:py-5 text-sm">{boat.ticketPrice || boat.ticket_price}</td>
                           <td className="px-4 sm:px-7 py-4 sm:py-5 text-sm">{boat.routeFrom || boat.route_from}</td>
                           <td className="px-4 sm:px-7 py-4 sm:py-5 text-sm">{boat.routeTo || boat.route_to}</td>
+
+                          {/* Schedules column */}
+                          <td className="px-4 sm:px-6 py-4 sm:py-5">
+                            {(() => {
+                              const sched = Array.isArray(boat.schedules) ? boat.schedules : []
+                              if (sched.length === 0) return (
+                                <span className="text-gray-400 italic text-xs">No schedules</span>
+                              )
+                              return (
+                                <div className="flex flex-col gap-1">
+                                  {sched.map((s: any, i: number) => (
+                                    <span
+                                      key={i}
+                                      className="inline-flex items-center gap-1 text-xs bg-blue-50 border border-blue-200 text-blue-700 rounded-md px-2 py-0.5 whitespace-nowrap"
+                                    >
+                                      🕐 {s.departureTime} → {s.arrivalTime}
+                                    </span>
+                                  ))}
+                                </div>
+                              )
+                            })()}
+                          </td>
+
                           <td className="px-4 sm:px-6 py-4">
                             <button
                               className="bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white px-3 sm:px-4 py-2 rounded-lg font-medium flex items-center gap-2 transition-colors text-sm whitespace-nowrap"
-                              onClick={() => navigate(`/bookboat/${boat.boatId || boat.boat_id}`)}>
+                              onClick={() => navigate(`/bookboat/${boat.boatId || boat.boat_id}`)}
+                            >
                               <Bookmark className="w-4 h-4" />Book Trip
                             </button>
                           </td>
@@ -809,11 +886,13 @@ export default function UserDashboard() {
                   </table>
                 </div>
               </div>
+
             </div>
           </div>
         )
       }
 
+      // ── Manage Reservations & Bookings ───────────────────────────────────
       case "managereservationandbookings":
         return (
           <main className="min-h-screen bg-gradient-to-br from-blue-50 to-blue-100 py-5 sm:py-8 px-3 sm:px-4 md:px-8">
@@ -905,6 +984,7 @@ export default function UserDashboard() {
           </main>
         )
 
+      // ── View Boats ───────────────────────────────────────────────────────
       case "viewboats":
         return (
           <>
@@ -949,6 +1029,7 @@ export default function UserDashboard() {
           </>
         )
 
+      // ── Weather ──────────────────────────────────────────────────────────
       case "weather":
         return (
           <div className="min-h-screen bg-gradient-to-br from-blue-50 to-slate-100">
@@ -964,6 +1045,7 @@ export default function UserDashboard() {
           </div>
         )
 
+      // ── Ticket Support ───────────────────────────────────────────────────
       case "ticketsupport":
         return (
           <main className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-blue-50 py-6 sm:py-12 px-3 sm:px-6 lg:px-8">
@@ -1131,6 +1213,7 @@ export default function UserDashboard() {
           </main>
         )
 
+      // ── Fare & Surge Risk Prediction ─────────────────────────────────────
       case "fareandsurgeriskprediction":
         return (
           <div className="min-h-screen bg-gradient-to-br from-blue-50 to-slate-100 flex flex-col justify-center items-center">
@@ -1159,10 +1242,10 @@ export default function UserDashboard() {
   return (
     <div className="flex min-h-screen">
 
-      {/* ── Weather Caution Modal ─────────────────────────────────────────── */}
+      {/* Weather Caution Modal */}
       <WeatherCautionModal open={weatherModalOpen} onClose={() => setWeatherModalOpen(false)} />
 
-      {/* ── Cancel / Decline Modal ────────────────────────────────────────── */}
+      {/* Cancel / Decline Modal */}
       {cancelModalType && (
         <div className="fixed inset-0 backdrop-blur-sm bg-black/30 flex items-center justify-center p-3 sm:p-4 z-50">
           <div className="bg-gradient-to-br from-blue-50 to-indigo-50 rounded-xl shadow-2xl max-w-md w-full p-5 sm:p-8 relative border border-blue-200 mx-3 sm:mx-0">
