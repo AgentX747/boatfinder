@@ -245,7 +245,7 @@ export async function searchrouteandtime(query: any = {}) {
 export async function bookBoatdetails(boatID: string) {
   return withCache(`bookboats:${boatID}`, BOATS_TTL, async () => {
     const [rows] = await connection.execute<RowDataPacket[]>(
-      `SELECT b.boat_id AS boatId, b.boat_name AS boatName,
+      `SELECT b.boat_id AS boatId, b.boat_name AS boatName,b.image,
               b.vessel_type AS vesselType, b.capacity_information AS capacity,
               b.operator_id AS operatorId, b.fk_boats_company_id AS companyId,
               c.companyName, CONCAT(bo.firstName, ' ', bo.lastName) AS operatorName,

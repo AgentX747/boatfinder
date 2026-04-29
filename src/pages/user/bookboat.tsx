@@ -6,6 +6,7 @@ import { apiFetch } from "../../utils/apifetch";
 interface BoatData {
   boatId: string;
   boatName: string;
+  image?: string;
   vesselType: string;
   capacity: string;
   operatorId: string;
@@ -226,6 +227,20 @@ export default function BookBoat() {
         </div>
 
         <div className="space-y-8">
+
+          {/* Boat Image */}
+          {bookDetails?.image && (
+            <div className="flex flex-col items-center justify-center pb-6 border-b-2 border-blue-200">
+              <div className="w-64 h-64 rounded-full overflow-hidden shadow-2xl border-4 border-blue-200 flex items-center justify-center bg-blue-50">
+                <img
+                  src={bookDetails.image}
+                  alt={bookDetails.boatName}
+                  className="w-full h-full object-cover"
+                />
+              </div>
+              <h2 className="text-3xl font-bold text-blue-900 mt-6">{bookDetails.boatName}</h2>
+            </div>
+          )}
 
           {/* Boat Information */}
           <div>
