@@ -489,28 +489,39 @@ export default function UserDashboard() {
         } catch (err) { console.error("Failed to fetch all boats", err) }
       }
 
-      async function getRecommendedBoats() {
-        setBoatsLoading(true)
-        try {
-          const res = await apiFetch(`https://boatfinder.onrender.com/user/recommendations/${userId}`, { method: "GET", credentials: "include" })
-          if (!res.ok) throw new Error("Failed to fetch recommendations")
-          const data = await res.json()
-          setRecommendedBoats(
-            Array.isArray(data) ? data.map((boat: any) => ({
-              ...boat,
-              boatId:       boat.boatId      ?? boat.boat_id,
-              boatName:     boat.boatName     ?? boat.boat_name,
-              vesselType:   boat.vesselType   ?? boat.vessel_type,
-              capacity:     boat.capacity     ?? boat.capacity_information,
-              ticketPrice:  boat.ticketPrice  ?? boat.ticket_price,
-              routeFrom:    boat.routeFrom    ?? boat.route_from,
-              routeTo:      boat.routeTo      ?? boat.route_to,
-              operatorName: boat.operatorName ?? boat.operator_name,
-            })) : []
-          )
-        } catch (err) { console.error("Failed to fetch recommendations", err); setRecommendedBoats([]) }
-        finally { setBoatsLoading(false) }
-      }
+     async function getRecommendedBoats() {
+  setBoatsLoading(true)
+  try {
+    // ✅ Use the weighted CF endpoint — userId comes from JWT, not URL param
+    const res = await apiFetch(
+      `https://boatfinder.onrender.com/user/recommendations`,
+      { method: "GET", credentials: "include" }
+    )
+    if (!res.ok) throw new Error("Failed to fetch recommendations")
+    const data = await res.json()
+    setRecommendedBoats(
+      Array.isArray(data)
+        ? data.map((boat: any) => ({
+            ...boat,
+            // weighted endpoint returns snake_case BoatRow — normalize here
+            boatId:       boat.boat_id               ?? boat.boatId,
+            boatName:     boat.boat_name             ?? boat.boatName,
+            vesselType:   boat.vessel_type           ?? boat.vesselType,
+            capacity:     boat.capacity_information  ?? boat.capacity,
+            ticketPrice:  boat.ticket_price          ?? boat.ticketPrice,
+            routeFrom:    boat.route_from            ?? boat.routeFrom,
+            routeTo:      boat.route_to              ?? boat.routeTo,
+            operatorName: boat.operatorName,
+          }))
+        : []
+    )
+  } catch (err) {
+    console.error("Failed to fetch recommendations", err)
+    setRecommendedBoats([])
+  } finally {
+    setBoatsLoading(false)
+  }
+}
 
       // Returns data so we can pass it to checkForAutoCancelledTrips
       async function getPendingBookings(): Promise<any[]> {
@@ -766,32 +777,70 @@ export default function UserDashboard() {
           </main>
         )
 
-      case "viewboats":
-        return (
-          <>
-            <div className="relative w-full overflow-hidden bg-gradient-to-r from-blue-600 to-blue-700 py-12 sm:py-16 md:py-20">
-              <svg className="absolute inset-0 w-full h-full" viewBox="0 0 1200 120" preserveAspectRatio="none" style={{ opacity: 0.1 }}>
-                <defs><style>{`@keyframes wave1{0%{transform:translateX(0)}100%{transform:translateX(1200px)}}@keyframes wave2{0%{transform:translateX(-1200px)}100%{transform:translateX(0)}}.wave1{animation:wave1 15s linear infinite}.wave2{animation:wave2 10s linear infinite}`}</style></defs>
-                <path className="wave1" d="M0,60 Q300,30 600,60 T1200,60 L1200,120 L0,120 Z" fill="white" />
-                <path className="wave2" d="M0,70 Q300,40 600,70 T1200,70 L1200,120 L0,120 Z" fill="white" />
-              </svg>
-              <div className="absolute top-4 right-8 opacity-10 text-white text-4xl sm:text-5xl">⚓</div>
-              <div className="absolute bottom-4 left-8 opacity-10 text-white text-3xl sm:text-4xl">⚓</div>
-              <div className="relative z-10 px-4 sm:px-8 md:px-12 flex flex-col justify-center">
-                <h2 className="text-3xl sm:text-4xl md:text-5xl font-bold text-white mb-3 tracking-tight">Most Recommended Boats</h2>
-                <p className="text-base sm:text-lg text-blue-100 max-w-2xl">Here are the most recommended boats for your liking</p>
-              </div>
-            </div>
-            <div className="flex flex-row flex-wrap gap-4 sm:gap-5 p-4 sm:p-8" style={{ background: "#f0f6ff" }}>
-              {boatsLoading ? <p className="text-sm text-gray-400 w-full text-center py-10">Loading recommended boats…</p>
-                : recommendedBoats.length === 0 ? <p className="text-sm text-gray-400 w-full text-center py-10">No boats available right now.</p>
-                : recommendedBoats.map(boat => (
-                  <ViewBoatsCard key={boat.boatId || boat.boat_id} img={boat.image} boatName={boat.boatName || boat.boat_name} vesselType={boat.vesselType || boat.vessel_type} capacity={boat.capacity || boat.capacity_information} ticketPrice={boat.ticketPrice || boat.ticket_price} operatorName={boat.operatorName || boat.operator_name} />
-                ))}
-            </div>
-          </>
-        )
+     case "viewboats":
+  return (
+    <>
+      <div className="relative w-full overflow-hidden bg-gradient-to-r from-blue-600 to-blue-700 py-12 sm:py-16 md:py-20">
+        {/* ...existing hero SVG and text unchanged... */}
+        <svg className="absolute inset-0 w-full h-full" viewBox="0 0 1200 120" preserveAspectRatio="none" style={{ opacity: 0.1 }}>
+          <defs><style>{`@keyframes wave1{0%{transform:translateX(0)}100%{transform:translateX(1200px)}}@keyframes wave2{0%{transform:translateX(-1200px)}100%{transform:translateX(0)}}.wave1{animation:wave1 15s linear infinite}.wave2{animation:wave2 10s linear infinite}`}</style></defs>
+          <path className="wave1" d="M0,60 Q300,30 600,60 T1200,60 L1200,120 L0,120 Z" fill="white" />
+          <path className="wave2" d="M0,70 Q300,40 600,70 T1200,70 L1200,120 L0,120 Z" fill="white" />
+        </svg>
+        <div className="absolute top-4 right-8 opacity-10 text-white text-4xl sm:text-5xl">⚓</div>
+        <div className="absolute bottom-4 left-8 opacity-10 text-white text-3xl sm:text-4xl">⚓</div>
+        <div className="relative z-10 px-4 sm:px-8 md:px-12 flex flex-col justify-center">
+          <h2 className="text-3xl sm:text-4xl md:text-5xl font-bold text-white mb-3 tracking-tight">
+            Most Recommended Boats
+          </h2>
+          <p className="text-base sm:text-lg text-blue-100 max-w-2xl">
+            Personalised picks based on your bookings and browsing
+          </p>
+        </div>
+      </div>
 
+      <div className="flex flex-row flex-wrap gap-4 sm:gap-5 p-4 sm:p-8" style={{ background: "#f0f6ff" }}>
+        {boatsLoading ? (
+          <p className="text-sm text-gray-400 w-full text-center py-10">
+            Loading recommended boats…
+          </p>
+        ) : recommendedBoats.length === 0 ? (
+          <p className="text-sm text-gray-400 w-full text-center py-10">
+            No boats available right now.
+          </p>
+        ) : (
+          recommendedBoats.map((boat) => {
+            const id = boat.boatId ?? boat.boat_id
+            return (
+              <div
+                key={id}
+                className="cursor-pointer"
+                // ✅ Track click interaction then navigate to booking page
+                onClick={() => {
+                  apiFetch("https://boatfinder.onrender.com/user/track", {
+                    method: "POST",
+                    credentials: "include",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ boatId: id, type: "click" }),
+                  }).catch(() => {})
+                  navigate(`/bookboat/${id}`)
+                }}
+              >
+                <ViewBoatsCard
+                  img={boat.image}
+                  boatName={boat.boatName    ?? boat.boat_name}
+                  vesselType={boat.vesselType ?? boat.vessel_type}
+                  capacity={boat.capacity    ?? boat.capacity_information}
+                  ticketPrice={boat.ticketPrice ?? boat.ticket_price}
+                  operatorName={boat.operatorName}
+                />
+              </div>
+            )
+          })
+        )}
+      </div>
+    </>
+  )
       case "weather":
         return (
           <div className="min-h-screen bg-gradient-to-br from-blue-50 to-slate-100">

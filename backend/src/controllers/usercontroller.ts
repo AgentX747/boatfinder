@@ -1,12 +1,11 @@
 import { Request, Response } from 'express';
 import { JwtPayload } from 'jsonwebtoken';
-import {AuthPayload} from '../middleware/authmiddleware.js'
+import { AuthPayload } from '../middleware/authmiddleware.js'
 import { RowDataPacket } from 'mysql2';
-import {connection} from "../config/mysql.js";
+import { connection } from "../config/mysql.js";
 import * as userService from "../services/userservice.js";
-import { hashPassword , verifyPassword} from "../lib/passwordhash.js";
+import { hashPassword, verifyPassword } from "../lib/passwordhash.js";
 import * as onlineService from "../services/onlinepaymentservice.js";
-
 import { searchrouteandtime } from '../services/userservice.js';
 import { parse } from 'path';
 import { on } from 'events';
@@ -19,8 +18,15 @@ export async function searchBoatsController(req: Request, res: Response) {
       return res.status(401).json({ message: "User not authenticated" });
     }
 
-    const boats = await userService.searchrouteandtime(req.query);
+    // ── Track search interaction ──────────────────────────────────────────
+    // boatId 0 = route-only search (no specific boat targeted yet)
+    const { sub } = user;
+    const routeQuery = [req.query.routeFrom, req.query.routeTo].filter(Boolean).join(" → ");
+    if (routeQuery) {
+      userService.trackInteraction(Number(sub), 0, "search", routeQuery).catch(() => {});
+    }
 
+    const boats = await userService.searchrouteandtime(req.query);
     return res.json(boats);
 
   } catch (err: any) {
@@ -37,6 +43,7 @@ export async function getAllBoatsController(req: Request, res: Response) {
     res.status(err.status || 500).json({ message: err.message });
   }
 }
+
 export async function getRecommendedBoatsController(req: Request, res: Response) {
   try {
     const { userId } = req.params;
@@ -47,34 +54,79 @@ export async function getRecommendedBoatsController(req: Request, res: Response)
     res.status(500).json({ message: err.message || "Internal server error" });
   }
 }
+
+// ── NEW: weighted recommendations (uses clicks + searches + bookings) ─────────
+export async function getRecommendedBoatsWeightedController(req: Request, res: Response) {
+  try {
+    const user = req.user as AuthPayload;
+    const limit = Math.min(Number(req.query.limit ?? 6), 20);
+    const boats = await userService.getRecommendedBoatsWeighted(String(user.sub), limit);
+    res.json(boats);
+  } catch (err: any) {
+    console.error("getRecommendedBoatsWeighted error:", err);
+    res.status(500).json({ message: err.message || "Internal server error" });
+  }
+}
+
+// ── NEW: record a single user interaction (click / search / book) ─────────────
+export async function trackInteractionController(req: Request, res: Response) {
+  try {
+    const user = req.user as AuthPayload;
+    const { boatId, type, routeQuery } = req.body as {
+      boatId: number;
+      type: "book" | "click" | "search";
+      routeQuery?: string;
+    };
+
+    const VALID: string[] = ["book", "click", "search"];
+    if (!boatId || !type || !VALID.includes(type)) {
+      return res.status(400).json({ error: "boatId and a valid type (book|click|search) are required" });
+    }
+
+    await userService.trackInteraction(Number(user.sub), Number(boatId), type, routeQuery);
+    return res.status(204).send();
+
+  } catch (err: any) {
+    console.error("trackInteraction error:", err);
+    return res.status(500).json({ message: err.message || "Internal server error" });
+  }
+}
+
 export async function bookBoatdetailsController(req: Request, res: Response) {
   try {
     const boatID = String(req.params.boatID);
-    
+
+    // ── Track click interaction when user opens the booking page ─────────
+    const user = req.user as AuthPayload;
+    if (user?.sub) {
+      userService.trackInteraction(Number(user.sub), Number(boatID), "click").catch(() => {});
+    }
+
     const boatDetails = await userService.bookBoatdetails(boatID);
 
     if (!boatDetails) {
       return res.status(404).json({ message: 'Boat not found' });
     }
-    
+
     return res.json(boatDetails);
-    
+
   } catch (err: any) {
     return res.status(500).json({ message: err.message || 'Internal server error' });
   }
 }
 
 export async function physicalbookBoatController(req: Request, res: Response) {
-  const {tripDate} = req.body
+  const { tripDate } = req.body
   try {
-    if(!tripDate){
+    if (!tripDate) {
       return res.status(400).json({ message: 'trip date is required' });
     }
 
-    const {sub , role }  = req.user as AuthPayload;
+    const { sub, role } = req.user as AuthPayload;
     const boatId = parseInt(sub);
 
-    const result = await userService.physicalbookTransaction(boatId , req.body , role);
+    const result = await userService.physicalbookTransaction(boatId, req.body, role);
+    // Note: trackInteraction('book') is already called inside physicalbookTransaction
 
     return res.json({
       message: 'Booking created successfully',
@@ -92,7 +144,7 @@ export async function getPendingBookingsController(req: Request, res: Response) 
       return res.status(401).json({ message: 'Unauthorized' });
     }
 
-    const {sub }  = req.user as AuthPayload;
+    const { sub } = req.user as AuthPayload;
     const userID = parseInt(sub);
 
     const pendingBookings = await userService.getPendingBookings(userID);
@@ -110,14 +162,14 @@ export async function getAcceptedBookingsController(req: Request, res: Response)
       return res.status(401).json({ message: 'Unauthorized' });
     }
 
-    const {sub }  = req.user as AuthPayload;
+    const { sub } = req.user as AuthPayload;
     const userID = parseInt(sub);
 
     const acceptedBookings = await userService.getAcceptedBookings(userID);
 
     return res.json(acceptedBookings);
   } catch (err: any) {
-    console.error('Error fetching pending bookings:', err);
+    console.error('Error fetching accepted bookings:', err);
     return res.status(500).json({ message: err.message || 'Internal server error' });
   }
 }
@@ -128,7 +180,7 @@ export async function getBookingDetailsController(req: Request, res: Response) {
       return res.status(401).json({ message: 'Unauthorized' });
     }
 
-    const {sub }  = req.user as AuthPayload;
+    const { sub } = req.user as AuthPayload;
     const userID = parseInt(sub);
     const bookingId = String(req.params.bookingId);
 
@@ -198,7 +250,7 @@ export async function getCurrentUserDetailsCotroller(req: Request, res: Response
 
 export async function confirmEditUserController(req: Request, res: Response) {
   const { firstName, lastName, userName, email, password, confirmPassword,
-          phone_number, address, gender, birthdate } = req.body
+    phone_number, address, gender, birthdate } = req.body
 
   if (!firstName || !lastName || !userName || !email || !phone_number || !address || !gender || !birthdate) {
     return res.status(400).json({ message: "All fields are required" });
@@ -258,7 +310,7 @@ export async function getOnlineTripDetailsController(req: Request, res: Response
 
     const boatId = String(req.params.boatId);
     const tripDetails = await onlineService.getTripDetails(Number(boatId));
-    
+
     if (!tripDetails || tripDetails.length === 0) {
       return res.status(404).json({ message: "Trip not found" });
     }
@@ -273,16 +325,16 @@ export async function getOnlineTripDetailsController(req: Request, res: Response
 }
 
 export async function onlinebookBoatController(req: Request, res: Response) {
-  const {tripDate} = req.body
+  const { tripDate } = req.body
   try {
-    if(!tripDate){
+    if (!tripDate) {
       return res.status(400).json({ message: 'trip date is required' });
     }
 
-    const {sub , role }  = req.user as AuthPayload;
+    const { sub, role } = req.user as AuthPayload;
     const boatId = parseInt(sub);
 
-    const result = await onlineService.confirmOnlinePayment(boatId , req.body , role);
+    const result = await onlineService.confirmOnlinePayment(boatId, req.body, role);
 
     return res.json({
       message: 'Booking created successfully',
@@ -317,9 +369,9 @@ export async function refundTicketController(req: Request, res: Response) {
       data: result,
     });
 
-  } catch (error: any) {  // ✅ Type as any to access .status
+  } catch (error: any) {
     console.error(error);
-    return res.status(error?.status || 500).json({  // ✅ Forward the status
+    return res.status(error?.status || 500).json({
       success: false,
       message: error?.message || "Failed to submit refund request.",
     });
@@ -340,9 +392,7 @@ export async function getRefundTicketCardsController(req: Request, res: Response
 
   } catch (error) {
     console.error("getRefundTicketCardsController error:", error);
-    res.status(500).json({
-      message: "Failed to fetch refund tickets"
-    });
+    res.status(500).json({ message: "Failed to fetch refund tickets" });
   }
 }
 
@@ -355,9 +405,7 @@ export async function getSupportTicketCardsController(req: Request, res: Respons
     res.status(200).json(tickets)
 
   } catch (error) {
-    res.status(500).json({
-      message: "Failed to fetch support tickets"
-    })
+    res.status(500).json({ message: "Failed to fetch support tickets" });
   }
 }
 
