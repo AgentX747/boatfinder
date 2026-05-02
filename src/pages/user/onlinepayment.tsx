@@ -1,11 +1,9 @@
 'use client';
 
-import { Lock, Upload, CreditCard, CheckCircle2, X } from 'lucide-react';
+import { Lock, Upload, CreditCard, CheckCircle2, X, Calendar, Clock } from 'lucide-react';
 import { useEffect, useState, useRef } from 'react';
 import { apiFetch } from '../../utils/apifetch';
-import { useNavigate, useParams } from 'react-router-dom';
-
-
+import { useNavigate, useParams, useLocation } from 'react-router-dom';
 
 interface BookingDetails {
   boat_id: string;
@@ -19,53 +17,62 @@ interface BookingDetails {
   route_to: string;
   route_from: string;
   schedules: { departureTime: string; arrivalTime: string }[];
-
   ticketPrice: string;
   status: string;
+  gcash_number: string; // operator's GCash number from DB
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Read-only summary row
+// ─────────────────────────────────────────────────────────────────────────────
+function SummaryRow({ label, value }: { label: string; value: string }) {
+  return (
+    <div>
+      <p className="text-sm font-semibold text-blue-600 mb-1">{label}</p>
+      <p className="text-base font-semibold text-blue-900">{value || "—"}</p>
+    </div>
+  );
 }
 
 export default function OnlinePaymentPage() {
-  const navigate = useNavigate();
+  const navigate  = useNavigate();
   const { boatId } = useParams();
+  const location  = useLocation();
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const [bookingDetails, setBookingDetails] = useState<BookingDetails>({
-    boat_id: "",
-    operator_id: "",
-    operatorName: "",
-    route_to: "",
-    route_from: "",
-    ticketPrice: "",
-    status: "",
-    boat_name: "",
-    schedules: [],
-    vessel_type: "",
-    capacity: "",
-    company_id: "",
-    company_name: "",
-  });
-  
+  // ── Values carried over from BookBoat via router state ──────────────────
+  const routeState = (location.state ?? {}) as {
+    tripDate?: string;
+    selectedSchedule?: { departureTime: string; arrivalTime: string };
+  };
+  const tripDate         = routeState.tripDate         ?? "";
+  const selectedSchedule = routeState.selectedSchedule ?? null;
 
-const [selectedSchedule, setSelectedSchedule] = useState<{ departureTime: string; arrivalTime: string } | null>(null);
-  const [gcashNumber, setGcashNumber] = useState("");
-  const [gcashName, setGcashName] = useState("");
-  const [tripDate, setTripDate] = useState("");
-  const [receiptFile, setReceiptFile] = useState<File | null>(null);
+  const [bookingDetails, setBookingDetails] = useState<BookingDetails>({
+    boat_id: "", operator_id: "", operatorName: "", route_to: "", route_from: "",
+    ticketPrice: "", status: "", boat_name: "", schedules: [], vessel_type: "",
+    capacity: "", company_id: "", company_name: "", gcash_number: "",
+  });
+
+  const [receiptFile, setReceiptFile]       = useState<File | null>(null);
   const [receiptPreview, setReceiptPreview] = useState<string | null>(null);
-  const [submitting, setSubmitting] = useState(false);
-  const [error, setError] = useState("");
+  const [submitting, setSubmitting]         = useState(false);
+  const [error, setError]                   = useState("");
 
   useEffect(() => {
+    // If the user navigated here directly without booking state, send them back
+    if (!tripDate || !selectedSchedule) {
+      alert("Please select a date and time slot before proceeding to payment.");
+      navigate(-1);
+      return;
+    }
+
     async function fetchSession() {
       try {
         const res = await apiFetch("https://boatfinder.onrender.com/user/usersession", {
-          method: "GET",
-          credentials: "include",
+          method: "GET", credentials: "include",
         });
-        if (res.status === 401 || res.status === 403) {
-          navigate("/login");
-          return;
-        }
+        if (res.status === 401 || res.status === 403) { navigate("/login"); return; }
       } catch (err) {
         console.error("Failed to fetch session", err);
         navigate("/login");
@@ -74,14 +81,11 @@ const [selectedSchedule, setSelectedSchedule] = useState<{ departureTime: string
 
     async function fetchBookingDetails() {
       try {
-        const res = await apiFetch(`https://boatfinder.onrender.com/user/gettripdetails/${boatId}`, {
-          method: "GET",
-          credentials: "include",
-        });
-        if (res.status === 401 || res.status === 403) {
-          navigate("/login");
-          return;
-        }
+        const res = await apiFetch(
+          `https://boatfinder.onrender.com/user/gettripdetails/${boatId}`,
+          { method: "GET", credentials: "include" }
+        );
+        if (res.status === 401 || res.status === 403) { navigate("/login"); return; }
         const data = await res.json();
         setBookingDetails({
           boat_id:      data.boat_id,
@@ -97,6 +101,7 @@ const [selectedSchedule, setSelectedSchedule] = useState<{ departureTime: string
           schedules:    data.schedules || [],
           ticketPrice:  data.ticket_price,
           status:       data.status,
+          gcash_number: data.gcash_number || "",   // ← operator's GCash number
         });
       } catch (err) {
         console.error("Failed to fetch booking details", err);
@@ -128,28 +133,21 @@ const [selectedSchedule, setSelectedSchedule] = useState<{ departureTime: string
 
   async function handleSubmit() {
     setError("");
-
-    if (!tripDate) return setError("Please select a trip date.");
-    if (!selectedSchedule) return setError("Please select a time slot.");
-    if (!gcashNumber) return setError("Please enter your GCash number.");
-    if (!gcashName) return setError("Please enter your GCash account name.");
     if (!receiptFile) return setError("Please upload your GCash receipt.");
 
     setSubmitting(true);
     try {
       const formData = new FormData();
-      formData.append("boatId",     bookingDetails.boat_id);
-      formData.append("operatorId", bookingDetails.operator_id);
-      formData.append("companyId",  bookingDetails.company_id);
-      formData.append("boatName",   bookingDetails.boat_name);
-      formData.append("routeFrom",  bookingDetails.route_from);
-      formData.append("routeTo",    bookingDetails.route_to);
-      formData.append("schedules", JSON.stringify(selectedSchedule));
+      formData.append("boatId",      bookingDetails.boat_id);
+      formData.append("operatorId",  bookingDetails.operator_id);
+      formData.append("companyId",   bookingDetails.company_id);
+      formData.append("boatName",    bookingDetails.boat_name);
+      formData.append("routeFrom",   bookingDetails.route_from);
+      formData.append("routeTo",     bookingDetails.route_to);
+      formData.append("schedules",   JSON.stringify(selectedSchedule));
       formData.append("ticketPrice", bookingDetails.ticketPrice);
-      formData.append("tripDate",   tripDate);
-      formData.append("gcashNumber", gcashNumber);
-      formData.append("gcashName",  gcashName);
-      formData.append("gcashImage", receiptFile);
+      formData.append("tripDate",    tripDate);
+      formData.append("gcashImage",  receiptFile);
 
       const res = await apiFetch("https://boatfinder.onrender.com/user/onlinebookboat", {
         method: "POST",
@@ -172,13 +170,12 @@ const [selectedSchedule, setSelectedSchedule] = useState<{ departureTime: string
     }
   }
 
-  const today = new Date().toISOString().split("T")[0];
-
   return (
-    <div className="min-h-screen bg-gradient-to-br from-background to-muted/20 py-12 px-4 sm:px-6 lg:px-8">
+    <div className="min-h-screen bg-gradient-to-br from-blue-50 to-blue-100 py-12 px-4 sm:px-6 lg:px-8">
+
       {/* Header */}
-      <div className="max-w-6xl mx-auto mb-12">
-        <div className="flex items-center gap-3 mb-4">
+      <div className="max-w-3xl mx-auto mb-10">
+        <div className="flex items-center gap-3 mb-2">
           <div className="w-12 h-12 rounded-xl bg-blue-600 flex items-center justify-center">
             <CreditCard className="w-6 h-6 text-white" />
           </div>
@@ -189,178 +186,147 @@ const [selectedSchedule, setSelectedSchedule] = useState<{ departureTime: string
 
       <div className="max-w-3xl mx-auto space-y-8">
 
-        {/* Step 1: Booking Summary */}
+        {/* ── Step 1: Booking Summary ─────────────────────────────────────── */}
         <div className="bg-white rounded-2xl p-8 shadow-md border border-blue-200">
           <div className="flex items-center gap-3 mb-6">
-            <div className="w-8 h-8 rounded-full bg-blue-600 flex items-center justify-center text-white font-semibold">1</div>
+            <div className="w-8 h-8 rounded-full bg-blue-600 flex items-center justify-center text-white font-semibold text-sm">1</div>
             <h2 className="text-2xl font-bold text-blue-900">Booking Summary</h2>
           </div>
 
-          <div className="space-y-6">
+          <div className="space-y-5">
             <div className="grid grid-cols-2 gap-4">
-              <div>
-                <p className="text-sm font-semibold text-blue-600 mb-2">Boat ID</p>
-                <p className="text-lg font-semibold text-blue-900">{bookingDetails.boat_id || "—"}</p>
-              </div>
-              <div>
-                <p className="text-sm font-semibold text-blue-600 mb-2">Boat Name</p>
-                <p className="text-lg font-semibold text-blue-900">{bookingDetails.boat_name || "—"}</p>
-              </div>
+              <SummaryRow label="Boat ID"     value={bookingDetails.boat_id} />
+              <SummaryRow label="Boat Name"   value={bookingDetails.boat_name} />
             </div>
 
             <div className="grid grid-cols-2 gap-4">
-              <div>
-                <p className="text-sm font-semibold text-blue-600 mb-2">Vessel Type</p>
-                <p className="text-lg font-semibold text-blue-900">{bookingDetails.vessel_type || "—"}</p>
-              </div>
-              <div>
-                <p className="text-sm font-semibold text-blue-600 mb-2">Capacity</p>
-                <p className="text-lg font-semibold text-blue-900">{bookingDetails.capacity || "—"}</p>
-              </div>
+              <SummaryRow label="Vessel Type" value={bookingDetails.vessel_type} />
+              <SummaryRow label="Capacity"    value={bookingDetails.capacity} />
             </div>
 
-            <div className="pt-4 border-t border-blue-200 grid grid-cols-2 gap-4">
-              <div>
-                <p className="text-sm font-semibold text-blue-600 mb-2">Company Name</p>
-                <p className="text-lg font-semibold text-blue-900">{bookingDetails.company_name || "—"}</p>
-              </div>
-              <div>
-                <p className="text-sm font-semibold text-blue-600 mb-2">Operator Name</p>
-                <p className="text-lg font-semibold text-blue-900">{bookingDetails.operatorName || "—"}</p>
-              </div>
+            <div className="pt-4 border-t border-blue-100 grid grid-cols-2 gap-4">
+              <SummaryRow label="Company Name"  value={bookingDetails.company_name} />
+              <SummaryRow label="Operator Name" value={bookingDetails.operatorName} />
             </div>
 
-            <div>
-              <p className="text-sm font-semibold text-blue-600 mb-2">Operator ID</p>
-              <p className="text-lg font-semibold text-blue-900">{bookingDetails.operator_id || "—"}</p>
+            <div className="pt-4 border-t border-blue-100">
+              <SummaryRow
+                label="Route"
+                value={
+                  bookingDetails.route_from && bookingDetails.route_to
+                    ? `${bookingDetails.route_from} → ${bookingDetails.route_to}`
+                    : ""
+                }
+              />
             </div>
 
-            <div className="pt-4 border-t border-blue-200">
-              <p className="text-sm font-semibold text-blue-600 mb-2">Route</p>
-              <p className="text-lg font-semibold text-blue-900">
-                {bookingDetails.route_from && bookingDetails.route_to
-                  ? `${bookingDetails.route_from} → ${bookingDetails.route_to}`
-                  : "—"}
+            {/* ── Trip Date (read-only, pre-filled from BookBoat) ── */}
+            <div className="pt-4 border-t border-blue-100">
+              <p className="text-sm font-semibold text-blue-600 mb-2 flex items-center gap-2">
+                <Calendar className="w-4 h-4" /> Trip Date
               </p>
+              <div className="inline-flex items-center gap-2 bg-blue-50 border border-blue-200 rounded-lg px-4 py-2">
+                <span className="text-blue-900 font-semibold">{tripDate}</span>
+              </div>
             </div>
 
-            {/* ── Time Slot Selector ── */}
-            <div className="pt-4 border-t border-blue-200">
-              <p className="text-sm font-semibold text-blue-600 mb-3">
-                Select Time Slot <span className="text-red-500">*</span>
+            {/* ── Selected Time Slot (read-only, pre-filled from BookBoat) ── */}
+            <div className="pt-4 border-t border-blue-100">
+              <p className="text-sm font-semibold text-blue-600 mb-2 flex items-center gap-2">
+                <Clock className="w-4 h-4" /> Selected Time Slot
               </p>
-             {bookingDetails.schedules.length === 0 ? (
-  <p className="text-sm text-gray-400 italic">No schedules available.</p>
-) : (
-  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-    {bookingDetails.schedules.map((slot, index) => {
-      const isSelected =
-        selectedSchedule?.departureTime === slot.departureTime &&
-        selectedSchedule?.arrivalTime === slot.arrivalTime;
-      return (
-        <button
-          key={index}
-          type="button"
-          onClick={() => setSelectedSchedule(slot)}
-          className={`w-full px-4 py-2.5 rounded-lg font-medium transition-colors border-2 text-sm
-            ${isSelected
-              ? "bg-blue-500 text-white border-blue-500"
-              : "bg-white text-blue-600 border-blue-200 hover:bg-blue-50"}`}
-        >
-          {slot.departureTime} → {slot.arrivalTime}
-        </button>
-      );
-    })}
-  </div>
-)}
-              {selectedSchedule && (
-                <p className="text-xs text-green-600 font-semibold mt-2">
-                  ✓ Selected: {selectedSchedule.departureTime} → {selectedSchedule.arrivalTime}
-                </p>
+              {selectedSchedule ? (
+                <div className="inline-flex items-center gap-4 bg-blue-50 border border-blue-200 rounded-lg px-4 py-2">
+                  <div>
+                    <p className="text-xs text-blue-500 mb-0.5">Departure</p>
+                    <p className="text-blue-900 font-semibold">{selectedSchedule.departureTime}</p>
+                  </div>
+                  <span className="text-blue-400 font-bold">→</span>
+                  <div>
+                    <p className="text-xs text-blue-500 mb-0.5">Arrival</p>
+                    <p className="text-blue-900 font-semibold">{selectedSchedule.arrivalTime}</p>
+                  </div>
+                </div>
+              ) : (
+                <p className="text-sm text-red-500">No time slot selected.</p>
               )}
             </div>
 
-            {/* Status */}
-            <div>
-              <p className="text-sm font-semibold text-blue-600 mb-2">Status</p>
-              <span className="inline-block px-3 py-1 rounded-full text-sm font-semibold bg-blue-100 text-blue-700 capitalize">
-                {bookingDetails.status || "—"}
-              </span>
+            <div className="pt-4 border-t border-blue-100 flex justify-between items-center">
+              <p className="text-sm font-semibold text-blue-600">Ticket Price</p>
+              <p className="text-xl font-bold text-blue-900">
+                ₱{bookingDetails.ticketPrice ? Number(bookingDetails.ticketPrice).toFixed(2) : "0.00"}
+              </p>
             </div>
+          </div>
+        </div>
 
-            {/* Trip Date */}
-            <div className="pt-4 border-t border-blue-200">
-              <label className="block text-sm font-semibold text-blue-600 mb-2">
-                Trip Date <span className="text-red-500">*</span>
-              </label>
-              <input
-                type="date"
-                min={today}
-                value={tripDate}
-                onChange={(e) => setTripDate(e.target.value)}
-                className="w-full px-4 py-3 bg-blue-50 border border-blue-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-600 transition text-blue-900"
-              />
-            </div>
+        {/* ── Step 2: GCash Payment Instructions ─────────────────────────── */}
+        <div className="bg-white rounded-2xl p-8 shadow-md border border-blue-200">
+          <div className="flex items-center gap-3 mb-6">
+            <div className="w-8 h-8 rounded-full bg-blue-600 flex items-center justify-center text-white font-semibold text-sm">2</div>
+            <h2 className="text-2xl font-bold text-blue-900">GCash Payment</h2>
+          </div>
 
-            <div className="pt-4 border-t border-blue-200">
-              <div className="flex justify-between items-center">
-                <p className="text-sm font-semibold text-blue-600">Ticket Price</p>
-                <p className="text-lg font-semibold text-blue-900">
-                  ₱{bookingDetails.ticketPrice ? Number(bookingDetails.ticketPrice).toFixed(2) : "0.00"}
+          <div className="space-y-4">
+            <p className="text-blue-700 text-sm">
+              Please send your payment to the boat operator's GCash account below, then upload your receipt in the next step.
+            </p>
+
+            {/* Operator GCash number display */}
+            <div className="bg-blue-50 border-2 border-blue-300 rounded-xl p-5 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+              <div>
+                <p className="text-xs font-semibold text-blue-500 uppercase tracking-wide mb-1">
+                  Operator GCash Number
                 </p>
+                {bookingDetails.gcash_number ? (
+                  <p className="text-2xl font-bold text-blue-900 tracking-widest">
+                    {bookingDetails.gcash_number}
+                  </p>
+                ) : (
+                  <p className="text-sm text-gray-400 italic">GCash number not available</p>
+                )}
+                <p className="text-xs text-blue-500 mt-1">{bookingDetails.operatorName}</p>
               </div>
+              {bookingDetails.gcash_number && (
+                <button
+                  type="button"
+                  onClick={() => navigator.clipboard.writeText(bookingDetails.gcash_number)}
+                  className="self-start sm:self-auto text-xs bg-blue-600 hover:bg-blue-700 text-white font-semibold px-4 py-2 rounded-lg transition"
+                >
+                  Copy Number
+                </button>
+              )}
+            </div>
+
+            <div className="bg-amber-50 border border-amber-200 rounded-lg p-4 text-sm text-amber-800">
+              <p className="font-semibold mb-1">📋 Payment Instructions</p>
+              <ol className="list-decimal list-inside space-y-1 text-amber-700">
+                <li>Open your GCash app and send <strong>₱{bookingDetails.ticketPrice ? Number(bookingDetails.ticketPrice).toFixed(2) : "0.00"}</strong> to the number above.</li>
+                <li>Take a screenshot of the successful transaction receipt.</li>
+                <li>Upload the receipt in Step 3 below.</li>
+              </ol>
             </div>
           </div>
         </div>
 
-        {/* Step 2: GCash Payment Details */}
+        {/* ── Step 3: Receipt Upload ──────────────────────────────────────── */}
         <div className="bg-white rounded-2xl p-8 shadow-md border border-blue-200">
           <div className="flex items-center gap-3 mb-6">
-            <div className="w-8 h-8 rounded-full bg-blue-600 flex items-center justify-center text-white font-semibold">2</div>
-            <h2 className="text-2xl font-bold text-blue-900">GCash Payment Details</h2>
-          </div>
-
-          <div className="space-y-6">
-            <div>
-              <label className="block text-sm font-semibold text-blue-900 mb-2">
-                GCash Number <span className="text-red-500">*</span>
-              </label>
-              <input
-                type="tel"
-                placeholder="09XX XXX XXXX"
-                value={gcashNumber}
-                onChange={(e) => setGcashNumber(e.target.value)}
-                className="w-full px-4 py-3 bg-blue-50 border border-blue-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-600 transition text-blue-900 placeholder-blue-400"
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-semibold text-blue-900 mb-2">
-                GCash Account Name <span className="text-red-500">*</span>
-              </label>
-              <input
-                type="text"
-                placeholder="Full Name"
-                value={gcashName}
-                onChange={(e) => setGcashName(e.target.value)}
-                className="w-full px-4 py-3 bg-blue-50 border border-blue-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-600 transition text-blue-900 placeholder-blue-400"
-              />
-            </div>
-          </div>
-        </div>
-
-        {/* Step 3: Receipt Upload */}
-        <div className="bg-white rounded-2xl p-8 shadow-md border border-blue-200">
-          <div className="flex items-center gap-3 mb-6">
-            <div className="w-8 h-8 rounded-full bg-blue-600 flex items-center justify-center text-white font-semibold">3</div>
+            <div className="w-8 h-8 rounded-full bg-blue-600 flex items-center justify-center text-white font-semibold text-sm">3</div>
             <h2 className="text-2xl font-bold text-blue-900">Upload Receipt</h2>
           </div>
 
           <div className="space-y-6">
-            <p className="text-blue-700">Upload your GCash payment receipt to complete the transaction</p>
+            <p className="text-blue-700">Upload your GCash payment screenshot to complete the booking.</p>
 
             {receiptPreview ? (
               <div className="relative rounded-xl overflow-hidden border border-blue-200">
-                <img src={receiptPreview} alt="Receipt preview" className="w-full max-h-64 object-contain bg-blue-50" />
+                <img
+                  src={receiptPreview}
+                  alt="Receipt preview"
+                  className="w-full max-h-72 object-contain bg-blue-50"
+                />
                 <button
                   onClick={removeFile}
                   className="absolute top-2 right-2 bg-red-500 text-white rounded-full p-1 hover:bg-red-600 transition"
@@ -371,12 +337,12 @@ const [selectedSchedule, setSelectedSchedule] = useState<{ departureTime: string
               </div>
             ) : (
               <div
-                className="border-2 border-dashed border-blue-300 rounded-xl p-8 text-center hover:border-blue-600 transition cursor-pointer bg-blue-50"
+                className="border-2 border-dashed border-blue-300 rounded-xl p-10 text-center hover:border-blue-600 transition cursor-pointer bg-blue-50"
                 onClick={() => fileInputRef.current?.click()}
               >
                 <Upload className="w-12 h-12 text-blue-600 mx-auto mb-4" />
                 <p className="text-blue-900 font-semibold mb-2">Click to upload receipt</p>
-                <p className="text-sm text-blue-600">or drag and drop (PNG, JPG, PDF)</p>
+                <p className="text-sm text-blue-500">PNG, JPG, or WEBP</p>
               </div>
             )}
 
@@ -396,7 +362,7 @@ const [selectedSchedule, setSelectedSchedule] = useState<{ departureTime: string
 
             <div className="flex items-center gap-2 text-sm bg-blue-100 border border-blue-300 rounded-lg p-4">
               <Lock className="w-4 h-4 flex-shrink-0 text-blue-600" />
-              <span className="text-blue-900">Secured by GCash</span>
+              <span className="text-blue-900">Your receipt is securely transmitted and used for verification only.</span>
             </div>
 
             <button
@@ -407,8 +373,17 @@ const [selectedSchedule, setSelectedSchedule] = useState<{ departureTime: string
               <CheckCircle2 className="w-5 h-5" />
               {submitting ? "Processing..." : "Complete Payment"}
             </button>
+
+            <button
+              type="button"
+              onClick={() => navigate(-1)}
+              className="w-full bg-gray-100 hover:bg-gray-200 text-gray-700 font-semibold py-3 rounded-lg transition"
+            >
+              ← Back to Booking
+            </button>
           </div>
         </div>
+
       </div>
     </div>
   );

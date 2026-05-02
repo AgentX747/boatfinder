@@ -35,6 +35,7 @@ export async function getTripDetails(boatId: number) {
         b.route_to,
         b.schedules,
         b.ticket_price, 
+        b.gcash_number,
         b.status
       FROM boats b
       JOIN boatoperators bo ON b.operator_id = bo.operator_id

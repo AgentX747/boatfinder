@@ -34,64 +34,59 @@ function DetailItem({ label, value }: DetailItemProps) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Helpers: parse a time string like "9:00 AM" or "10:30 PM" into
-// a comparable Date on a given date string ("YYYY-MM-DD").
+// Helpers
 // ─────────────────────────────────────────────────────────────────────────────
 function parseTimeToDate(dateStr: string, timeStr: string): Date | null {
   try {
-    // Normalise: "9:00 AM" / "10:30 PM" / "12:00 AM" etc.
-    const match = timeStr.trim().match(/^(\d{1,2}):(\d{2})\s*(AM|PM)$/i)
-    if (!match) return null
-    let hours   = parseInt(match[1], 10)
-    const mins  = parseInt(match[2], 10)
-    const ampm  = match[3].toUpperCase()
-    if (ampm === "AM" && hours === 12) hours = 0
-    if (ampm === "PM" && hours !== 12) hours += 12
-    const [year, month, day] = dateStr.split("-").map(Number)
-    return new Date(year, month - 1, day, hours, mins, 0, 0)
+    const match = timeStr.trim().match(/^(\d{1,2}):(\d{2})\s*(AM|PM)$/i);
+    if (!match) return null;
+    let hours   = parseInt(match[1], 10);
+    const mins  = parseInt(match[2], 10);
+    const ampm  = match[3].toUpperCase();
+    if (ampm === "AM" && hours === 12) hours = 0;
+    if (ampm === "PM" && hours !== 12) hours += 12;
+    const [year, month, day] = dateStr.split("-").map(Number);
+    return new Date(year, month - 1, day, hours, mins, 0, 0);
   } catch {
-    return null
+    return null;
   }
 }
 
-// Returns "YYYY-MM-DD" for today in local time
 function getTodayStr(): string {
-  const now = new Date()
-  const y   = now.getFullYear()
-  const m   = String(now.getMonth() + 1).padStart(2, "0")
-  const d   = String(now.getDate()).padStart(2, "0")
-  return `${y}-${m}-${d}`
+  const now = new Date();
+  const y   = now.getFullYear();
+  const m   = String(now.getMonth() + 1).padStart(2, "0");
+  const d   = String(now.getDate()).padStart(2, "0");
+  return `${y}-${m}-${d}`;
 }
 
-// Returns true if the departure time is still in the future for the chosen date
 function isSlotAvailable(
   tripDate: string,
   slot: { departureTime: string; arrivalTime: string }
 ): boolean {
-  const todayStr = getTodayStr()
-  // If the trip is on a future date it's always available
-  if (tripDate > todayStr) return true
-  // If the trip is today, check that departure hasn't passed yet
+  const todayStr = getTodayStr();
+  if (tripDate > todayStr) return true;
   if (tripDate === todayStr) {
-    const departure = parseTimeToDate(tripDate, slot.departureTime)
-    if (!departure) return true // can't parse → allow
-    return departure > new Date()
+    const departure = parseTimeToDate(tripDate, slot.departureTime);
+    if (!departure) return true;
+    return departure > new Date();
   }
-  // Past dates are blocked at the date-input level, but just in case:
-  return false
+  return false;
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Component
+// ─────────────────────────────────────────────────────────────────────────────
 export default function BookBoat() {
-  const { boatID }  = useParams()
-  const navigate    = useNavigate()
+  const { boatID } = useParams();
+  const navigate   = useNavigate();
 
-  const [bookDetails, setBookDetails]       = useState<BoatData | null>(null)
-  const [tripDate, setTripDate]             = useState<string>("")
+  const [bookDetails, setBookDetails]   = useState<BoatData | null>(null);
+  const [tripDate, setTripDate]         = useState<string>("");
   const [selectedSchedule, setSelectedSchedule] =
-    useState<{ departureTime: string; arrivalTime: string } | null>(null)
+    useState<{ departureTime: string; arrivalTime: string } | null>(null);
 
-  // Recompute "today" on every render so the page always reflects real time
-  const todayStr = getTodayStr()
+  const todayStr = getTodayStr();
 
   useEffect(() => {
     async function fetchSession() {
@@ -99,11 +94,11 @@ export default function BookBoat() {
         const res = await apiFetch("https://boatfinder.onrender.com/user/usersession", {
           method: "GET",
           credentials: "include",
-        })
-        await res.json()
+        });
+        await res.json();
       } catch (err) {
-        console.error("Failed to fetch session", err)
-        navigate("/login")
+        console.error("Failed to fetch session", err);
+        navigate("/login");
       }
     }
 
@@ -112,59 +107,51 @@ export default function BookBoat() {
         const response = await apiFetch(
           `https://boatfinder.onrender.com/user/bookboat/${boatID}`,
           { method: "GET", credentials: "include" }
-        )
-        const text = await response.text()
-        if (!text) { console.error("Empty response received"); return }
-        setBookDetails(JSON.parse(text))
+        );
+        const text = await response.text();
+        if (!text) { console.error("Empty response received"); return; }
+        setBookDetails(JSON.parse(text));
       } catch (err) {
-        console.error("Failed to fetch book details", err)
+        console.error("Failed to fetch book details", err);
       }
     }
 
-    fetchSession()
-    getBookDetails()
-  }, [boatID, navigate])
+    fetchSession();
+    getBookDetails();
+  }, [boatID, navigate]);
 
-  // When the user changes the date, clear any selected slot that may now
-  // be in the past (i.e. they switched back to today after selecting a past slot)
   function handleDateChange(newDate: string) {
-    setTripDate(newDate)
+    setTripDate(newDate);
     if (selectedSchedule && !isSlotAvailable(newDate, selectedSchedule)) {
-      setSelectedSchedule(null)
+      setSelectedSchedule(null);
     }
   }
 
-  // Central validation before any booking attempt
   function validateBooking(): boolean {
-    if (!bookDetails) return false
+    if (!bookDetails) return false;
 
     if (!tripDate) {
-      alert("Please select a trip date.")
-      return false
+      alert("Please select a trip date.");
+      return false;
     }
-
-    // Block past dates (belt-and-suspenders: input min= handles the UI)
     if (tripDate < todayStr) {
-      alert("You cannot book a trip on a past date. Please select today or a future date.")
-      return false
+      alert("You cannot book a trip on a past date. Please select today or a future date.");
+      return false;
     }
-
     if (!selectedSchedule) {
-      alert("Please select a departure/arrival time slot.")
-      return false
+      alert("Please select a departure/arrival time slot.");
+      return false;
     }
-
-    // Block past time slots when the chosen date is today
     if (tripDate === todayStr && !isSlotAvailable(tripDate, selectedSchedule)) {
       alert(
         `The ${selectedSchedule.departureTime} slot has already passed. ` +
         `Please select a future time slot or a different date.`
-      )
-      setSelectedSchedule(null)
-      return false
+      );
+      setSelectedSchedule(null);
+      return false;
     }
 
-    return true
+    return true;
   }
 
   async function handlePhysicalBooking(bookingBody: any) {
@@ -177,43 +164,49 @@ export default function BookBoat() {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(bookingBody),
         }
-      )
-      const data = await response.json()
+      );
+      const data = await response.json();
       if (response.ok) {
-        alert("Booking successful!")
-        navigate("/userdashboard")
+        alert("Booking successful!");
+        navigate("/userdashboard");
       } else {
-        alert("Booking failed: " + data.message)
+        alert("Booking failed: " + data.message);
       }
     } catch (error) {
-      console.error("Error during physical booking:", error)
+      console.error("Error during physical booking:", error);
     }
   }
 
   function buildBookingBody() {
-    if (!bookDetails || !selectedSchedule) return null
+    if (!bookDetails || !selectedSchedule) return null;
     return {
-      boatId:      bookDetails.boatId             || null,
-      boatName:    bookDetails.boatName            || null,
-      tripDate:    tripDate                        || null,
-      operatorId:  bookDetails.operatorId          || null,
-      companyId:   bookDetails.companyId           || null,
-      routeFrom:   bookDetails.departureLocation   || null,
-      routeTo:     bookDetails.arrivalLocation     || null,
+      boatId:      bookDetails.boatId            || null,
+      boatName:    bookDetails.boatName           || null,
+      tripDate:    tripDate                       || null,
+      operatorId:  bookDetails.operatorId         || null,
+      companyId:   bookDetails.companyId          || null,
+      routeFrom:   bookDetails.departureLocation  || null,
+      routeTo:     bookDetails.arrivalLocation    || null,
       schedules:   selectedSchedule,
-      ticketPrice: bookDetails.ticketPrice         || 0,
-    }
+      ticketPrice: bookDetails.ticketPrice        || 0,
+    };
   }
 
   function onPhysicalBook() {
-    if (!validateBooking()) return
-    const body = buildBookingBody()
-    if (body) handlePhysicalBooking(body)
+    if (!validateBooking()) return;
+    const body = buildBookingBody();
+    if (body) handlePhysicalBooking(body);
   }
 
+  // ── Pass tripDate + selectedSchedule via router state to OnlinePaymentPage ──
   function onOnlineBook() {
-    if (!validateBooking()) return
-    navigate(`/onlinepayment/${boatID}`)
+    if (!validateBooking()) return;
+    navigate(`/onlinepayment/${boatID}`, {
+      state: {
+        tripDate,
+        selectedSchedule,
+      },
+    });
   }
 
   return (
@@ -249,10 +242,10 @@ export default function BookBoat() {
               Boat Information
             </h2>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6 bg-blue-50 p-5 rounded-lg">
-              <DetailItem label="Boat ID"      value={bookDetails?.boatId      || ""} />
-              <DetailItem label="Boat Name"    value={bookDetails?.boatName    || ""} />
-              <DetailItem label="Vessel Type"  value={bookDetails?.vesselType  || ""} />
-              <DetailItem label="Capacity"     value={bookDetails?.capacity    || ""} />
+              <DetailItem label="Boat ID"     value={bookDetails?.boatId     || ""} />
+              <DetailItem label="Boat Name"   value={bookDetails?.boatName   || ""} />
+              <DetailItem label="Vessel Type" value={bookDetails?.vesselType || ""} />
+              <DetailItem label="Capacity"    value={bookDetails?.capacity   || ""} />
             </div>
           </div>
 
@@ -280,7 +273,7 @@ export default function BookBoat() {
             </div>
           </div>
 
-          {/* Trip Date — must be chosen BEFORE schedule so the slot filter works */}
+          {/* Trip Date */}
           <div>
             <h2 className="text-xl font-bold text-blue-900 mb-4 flex items-center">
               <span className="inline-block w-1 h-6 bg-blue-600 mr-3 rounded" />
@@ -293,7 +286,7 @@ export default function BookBoat() {
               <input
                 type="date"
                 value={tripDate}
-                min={todayStr}                      
+                min={todayStr}
                 onChange={(e) => handleDateChange(e.target.value)}
                 className="w-full px-4 py-2 border-2 border-blue-200 rounded-lg focus:outline-none focus:border-blue-600 text-gray-900"
               />
@@ -324,21 +317,15 @@ export default function BookBoat() {
 
               {tripDate && bookDetails?.schedules && bookDetails.schedules.length > 0 ? (
                 (() => {
-                  const available = bookDetails.schedules.filter(s =>
-                    isSlotAvailable(tripDate, s)
-                  )
-                  const past = bookDetails.schedules.filter(s =>
-                    !isSlotAvailable(tripDate, s)
-                  )
+                  const available = bookDetails.schedules.filter(s => isSlotAvailable(tripDate, s));
+                  const past      = bookDetails.schedules.filter(s => !isSlotAvailable(tripDate, s));
 
                   return (
                     <>
-                      {/* Available slots */}
                       {available.map((slot, index) => {
                         const isSelected =
                           selectedSchedule?.departureTime === slot.departureTime &&
-                          selectedSchedule?.arrivalTime   === slot.arrivalTime
-
+                          selectedSchedule?.arrivalTime   === slot.arrivalTime;
                         return (
                           <button
                             key={`avail-${index}`}
@@ -366,10 +353,9 @@ export default function BookBoat() {
                               )}
                             </div>
                           </button>
-                        )
+                        );
                       })}
 
-                      {/* Past slots — shown greyed-out so the user understands why they're gone */}
                       {past.length > 0 && (
                         <div className="mt-2 space-y-2">
                           <p className="text-xs text-slate-400 font-medium uppercase tracking-wide">
@@ -404,7 +390,7 @@ export default function BookBoat() {
                         </p>
                       )}
                     </>
-                  )
+                  );
                 })()
               ) : (
                 tripDate && (
@@ -452,7 +438,7 @@ export default function BookBoat() {
                 </p>
                 <button
                   className="w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold py-2 px-4 rounded-lg transition cursor-pointer"
-                  onClick={(e) => { e.stopPropagation(); onPhysicalBook() }}
+                  onClick={(e) => { e.stopPropagation(); onPhysicalBook(); }}
                 >
                   Reserve Now
                 </button>
@@ -475,11 +461,12 @@ export default function BookBoat() {
                 </p>
                 <button
                   className="w-full bg-green-600 hover:bg-green-700 text-white font-semibold py-2 px-4 rounded-lg transition cursor-pointer"
-                  onClick={(e) => { e.stopPropagation(); onOnlineBook() }}
+                  onClick={(e) => { e.stopPropagation(); onOnlineBook(); }}
                 >
                   Proceed to Online Payment
                 </button>
               </div>
+
             </div>
           </div>
 
@@ -496,5 +483,5 @@ export default function BookBoat() {
         </div>
       </div>
     </div>
-  )
+  );
 }
