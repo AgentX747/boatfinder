@@ -19,12 +19,9 @@ interface BookingDetails {
   schedules: { departureTime: string; arrivalTime: string }[];
   ticketPrice: string;
   status: string;
-  gcash_number: string; // operator's GCash number from DB
+  gcash_number: string;
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Read-only summary row
-// ─────────────────────────────────────────────────────────────────────────────
 function SummaryRow({ label, value }: { label: string; value: string }) {
   return (
     <div>
@@ -35,9 +32,9 @@ function SummaryRow({ label, value }: { label: string; value: string }) {
 }
 
 export default function OnlinePaymentPage() {
-  const navigate  = useNavigate();
-  const { boatId } = useParams();
-  const location  = useLocation();
+  const navigate     = useNavigate();
+  const { boatId }   = useParams();
+  const location     = useLocation();
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // ── Values carried over from BookBoat via router state ──────────────────
@@ -60,7 +57,6 @@ export default function OnlinePaymentPage() {
   const [error, setError]                   = useState("");
 
   useEffect(() => {
-    // If the user navigated here directly without booking state, send them back
     if (!tripDate || !selectedSchedule) {
       alert("Please select a date and time slot before proceeding to payment.");
       navigate(-1);
@@ -86,22 +82,32 @@ export default function OnlinePaymentPage() {
           { method: "GET", credentials: "include" }
         );
         if (res.status === 401 || res.status === 403) { navigate("/login"); return; }
-        const data = await res.json();
+
+        const raw = await res.json();
+
+        // ── getTripDetails returns an array — always pick the first row ───
+        const data = Array.isArray(raw) ? raw[0] : raw;
+
+        if (!data) {
+          console.error("No trip details returned for boatId:", boatId);
+          return;
+        }
+
         setBookingDetails({
-          boat_id:      data.boat_id,
-          boat_name:    data.boat_name,
-          vessel_type:  data.vessel_type,
-          capacity:     data.capacity_information,
-          operator_id:  data.operator_id,
-          operatorName: data.operatorName,
-          company_id:   data.company_id,
-          company_name: data.companyName,
-          route_to:     data.route_to,
-          route_from:   data.route_from,
-          schedules:    data.schedules || [],
-          ticketPrice:  data.ticket_price,
-          status:       data.status,
-          gcash_number: data.gcash_number || "",   // ← operator's GCash number
+          boat_id:      String(data.boat_id               ?? ""),
+          boat_name:    String(data.boat_name              ?? ""),
+          vessel_type:  String(data.vessel_type            ?? ""),
+          capacity:     String(data.capacity_information   ?? ""),
+          operator_id:  String(data.operator_id            ?? ""),
+          operatorName: String(data.operatorName           ?? ""),
+          company_id:   String(data.company_id             ?? ""),
+          company_name: String(data.companyName            ?? ""),
+          route_to:     String(data.route_to               ?? ""),
+          route_from:   String(data.route_from             ?? ""),
+          schedules:    Array.isArray(data.schedules) ? data.schedules : [],
+          ticketPrice:  String(data.ticket_price           ?? ""),
+          status:       String(data.status                 ?? ""),
+          gcash_number: String(data.gcash_number           ?? ""),
         });
       } catch (err) {
         console.error("Failed to fetch booking details", err);
@@ -111,7 +117,7 @@ export default function OnlinePaymentPage() {
 
     async function init() {
       await fetchSession();
-      fetchBookingDetails();
+      await fetchBookingDetails();
     }
     init();
   }, [boatId]);
@@ -220,7 +226,7 @@ export default function OnlinePaymentPage() {
               />
             </div>
 
-            {/* ── Trip Date (read-only, pre-filled from BookBoat) ── */}
+            {/* Trip Date — read-only from router state */}
             <div className="pt-4 border-t border-blue-100">
               <p className="text-sm font-semibold text-blue-600 mb-2 flex items-center gap-2">
                 <Calendar className="w-4 h-4" /> Trip Date
@@ -230,7 +236,7 @@ export default function OnlinePaymentPage() {
               </div>
             </div>
 
-            {/* ── Selected Time Slot (read-only, pre-filled from BookBoat) ── */}
+            {/* Time Slot — read-only from router state */}
             <div className="pt-4 border-t border-blue-100">
               <p className="text-sm font-semibold text-blue-600 mb-2 flex items-center gap-2">
                 <Clock className="w-4 h-4" /> Selected Time Slot
@@ -273,7 +279,7 @@ export default function OnlinePaymentPage() {
               Please send your payment to the boat operator's GCash account below, then upload your receipt in the next step.
             </p>
 
-            {/* Operator GCash number display */}
+            {/* Operator GCash number */}
             <div className="bg-blue-50 border-2 border-blue-300 rounded-xl p-5 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
               <div>
                 <p className="text-xs font-semibold text-blue-500 uppercase tracking-wide mb-1">
