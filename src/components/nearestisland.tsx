@@ -14,6 +14,14 @@ import {
 const MAPBOX_KEY =
   "pk.eyJ1IjoibWFkYXJhYWhyIiwiYSI6ImNtbmxjNmgycDFhczIycXBrdXZzZHZ6MTMifQ.jTbYTdU4_ia4-bMG6ET1_A";
 
+// ─── ROUTE MAP ────────────────────────────────────────────────────────────────
+// Maps departure port name → allowed arrival island names
+const ROUTE_MAP: Record<string, string[]> = {
+  "Mar Beach / Marigondon Port": ["Pangan-an Island", "Caohagan Island (Cawhagan)", "Olango Island (Sta. Rosa Port)"],
+  "Hilton / Punta Engaño Port":  ["Olango Island (Sta. Rosa Port)"],
+  "Angasil Port (Sta. Rosa Ferry)": ["Olango Island (Sta. Rosa Port)"],
+};
+
 // ─── TYPES ────────────────────────────────────────────────────────────────────
 interface Location {
   id: string;
@@ -262,6 +270,18 @@ const RANK_CONFIG = [
   { badgeBg: "#eff6ff", badgeText: "#1e40af", border: "#bfdbfe", activeBorder: "#3b82f6", cardBg: "#f8faff", label: "#6"      },
 ];
 
+// ─── HELPERS ──────────────────────────────────────────────────────────────────
+/** Return the allowed arrival island names for a given departure port name */
+function getAllowedArrivalNames(depName: string): string[] {
+  return ROUTE_MAP[depName] ?? [];
+}
+
+/** Return island Location objects allowed for a departure port */
+function getAllowedArrivals(dep: Location): Location[] {
+  const allowed = getAllowedArrivalNames(dep.name);
+  return ISLANDS.filter((isl) => allowed.includes(isl.name));
+}
+
 // ─── COMPONENT ────────────────────────────────────────────────────────────────
 export default function NearestIslandRecommendation() {
   const mapContainer = useRef<HTMLDivElement>(null);
@@ -269,13 +289,33 @@ export default function NearestIslandRecommendation() {
   const markersRef = useRef<any[]>([]);
 
   const [depId, setDepId] = useState<string>(PORTS[0].id);
-  const [arrId, setArrId] = useState<string>(ISLANDS[0].id);
+  const [arrId, setArrId] = useState<string>("");
   const [mapLoaded, setMapLoaded] = useState(false);
 
   const dep = useMemo(() => PORTS.find((p) => p.id === depId)!, [depId]);
-  const arr = useMemo(() => ALL_LOCATIONS.find((p) => p.id === arrId)!, [arrId]);
 
-  const seaRoute = useMemo(() => getSeaRoute(depId, arrId), [depId, arrId]);
+  // Arrivals restricted by ROUTE_MAP for the selected departure
+  const allowedArrivals = useMemo(() => getAllowedArrivals(dep), [dep]);
+
+  // Keep arrId in sync whenever dep changes — pick first allowed arrival
+  useEffect(() => {
+    if (allowedArrivals.length > 0) {
+      const stillValid = allowedArrivals.some((a) => a.id === arrId);
+      if (!stillValid) setArrId(allowedArrivals[0].id);
+    } else {
+      setArrId("");
+    }
+  }, [depId, allowedArrivals]);
+
+  const arr = useMemo(
+    () => ALL_LOCATIONS.find((p) => p.id === arrId) ?? allowedArrivals[0],
+    [arrId, allowedArrivals]
+  );
+
+  const seaRoute = useMemo(
+    () => (arr ? getSeaRoute(depId, arr.id) : []),
+    [depId, arr]
+  );
 
   const routeDist = useMemo(() => {
     let total = 0;
@@ -288,7 +328,8 @@ export default function NearestIslandRecommendation() {
   const travelMins = useMemo(() => Math.round((routeDist / 12) * 60), [routeDist]);
 
   const candidates = useMemo(() => {
-    return ALL_LOCATIONS.filter((p) => p.id !== depId && p.id !== arrId)
+    if (!arr || seaRoute.length < 2) return [];
+    return ALL_LOCATIONS.filter((p) => p.id !== depId && p.id !== arr.id)
       .map((p) => ({
         ...p,
         dist: pointToRouteSegmentsDist(p.lat, p.lng, seaRoute),
@@ -297,7 +338,7 @@ export default function NearestIslandRecommendation() {
       }))
       .sort((a, b) => a.dist - b.dist)
       .slice(0, 6);
-  }, [dep, arr, depId, arrId, seaRoute]);
+  }, [dep, arr, depId, seaRoute]);
 
   // ── Map bootstrap ──────────────────────────────────────────────────────────
   useEffect(() => {
@@ -327,7 +368,7 @@ export default function NearestIslandRecommendation() {
   }
 
   useEffect(() => {
-    if (!mapLoaded || !mapRef.current) return;
+    if (!mapLoaded || !mapRef.current || !arr) return;
     const map = mapRef.current;
     if (map.isStyleLoaded && !map.isStyleLoaded()) {
       map.once("styledata", renderRoute);
@@ -343,7 +384,7 @@ export default function NearestIslandRecommendation() {
 
   function renderRoute() {
     const map = mapRef.current;
-    if (!map || !map.isStyleLoaded?.()) return;
+    if (!map || !map.isStyleLoaded?.() || !arr) return;
     const mapboxgl = (window as any).mapboxgl;
     if (!mapboxgl) return;
 
@@ -372,7 +413,6 @@ export default function NearestIslandRecommendation() {
       },
     });
 
-    // Dashed indicator lines for top 3
     const indicatorColors = ["#dc2626", "#ea580c", "#ca8a04"];
     candidates.slice(0, 3).forEach((nearest, i) => {
       const mid = seaRoute[Math.floor(seaRoute.length / 2)];
@@ -433,7 +473,6 @@ export default function NearestIslandRecommendation() {
       </div>`;
     addMarker(arrEl, arr.lng, arr.lat);
 
-    // Top-3 map icons
     const top3Styles = [
       { bg: "#dc2626", text: "#fff", dot: "#dc2626", emoji: "🔴" },
       { bg: "#ea580c", text: "#fff", dot: "#ea580c", emoji: "🟠" },
@@ -454,28 +493,34 @@ export default function NearestIslandRecommendation() {
                       background:${s.dot};border:2.5px solid #fff;
                       box-shadow:0 1px 4px rgba(0,0,0,.2)"></div>
         </div>`;
-      el.addEventListener("click", () => setArrId(isl.id));
+      // Clicking a candidate on the map only sets arrival if it is in the allowed list
+      el.addEventListener("click", () => {
+        if (allowedArrivals.some((a) => a.id === isl.id)) {
+          setArrId(isl.id);
+        }
+      });
       addMarker(el, isl.lng, isl.lat);
     });
 
-    // Candidates 4–6: small gray dots
     candidates.slice(3, 6).forEach((isl) => {
       const el = document.createElement("div");
       el.style.cursor = "pointer";
       el.title = isl.name;
       el.innerHTML = `<div style="width:9px;height:9px;border-radius:50%;background:#94a3b8;border:2px solid #fff;box-shadow:0 1px 3px rgba(0,0,0,.15)"></div>`;
-      el.addEventListener("click", () => setArrId(isl.id));
+      el.addEventListener("click", () => {
+        if (allowedArrivals.some((a) => a.id === isl.id)) {
+          setArrId(isl.id);
+        }
+      });
       addMarker(el, isl.lng, isl.lat, "center");
     });
 
-    // Waypoint dots
     seaRoute.slice(1, -1).forEach((wp) => {
       const el = document.createElement("div");
       el.style.cssText = `width:5px;height:5px;border-radius:50%;background:#93c5fd;border:1px solid #fff;opacity:0.8`;
       addMarker(el, wp.lng, wp.lat, "center");
     });
 
-    // Fit bounds
     try {
       const bounds = new mapboxgl.LngLatBounds();
       seaRoute.forEach((p) => bounds.extend([p.lng, p.lat]));
@@ -485,8 +530,6 @@ export default function NearestIslandRecommendation() {
       console.error("fitBounds error:", e);
     }
   }
-
-  const arrOptions = ALL_LOCATIONS.filter((l) => l.id !== depId);
 
   const topLabel = (i: number) => {
     if (i === 0) return "CLOSEST";
@@ -543,6 +586,7 @@ export default function NearestIslandRecommendation() {
           }}
         >
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
+            {/* ── Departure ── */}
             <div>
               <label
                 style={{
@@ -561,14 +605,7 @@ export default function NearestIslandRecommendation() {
               </label>
               <select
                 value={depId}
-                onChange={(e) => {
-                  const newDep = e.target.value;
-                  setDepId(newDep);
-                  if (arrId === newDep) {
-                    const fallback = ALL_LOCATIONS.find((l) => l.id !== newDep);
-                    if (fallback) setArrId(fallback.id);
-                  }
-                }}
+                onChange={(e) => setDepId(e.target.value)}
                 style={{
                   width: "100%",
                   background: "#f8fafc",
@@ -582,10 +619,13 @@ export default function NearestIslandRecommendation() {
                   outline: "none",
                 }}
               >
-                {PORTS.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+                {PORTS.map((p) => (
+                  <option key={p.id} value={p.id}>{p.name}</option>
+                ))}
               </select>
             </div>
 
+            {/* ── Arrival — filtered by ROUTE_MAP ── */}
             <div>
               <label
                 style={{
@@ -600,11 +640,12 @@ export default function NearestIslandRecommendation() {
                   marginBottom: 6,
                 }}
               >
-                <MapPin size={10} /> Arrival Island / Port
+                <MapPin size={10} /> Arrival Island
               </label>
               <select
                 value={arrId}
                 onChange={(e) => setArrId(e.target.value)}
+                disabled={allowedArrivals.length === 0}
                 style={{
                   width: "100%",
                   background: "#f8fafc",
@@ -614,12 +655,24 @@ export default function NearestIslandRecommendation() {
                   padding: "8px 10px",
                   fontSize: "13px",
                   fontWeight: 500,
-                  cursor: "pointer",
+                  cursor: allowedArrivals.length === 0 ? "not-allowed" : "pointer",
                   outline: "none",
+                  opacity: allowedArrivals.length === 0 ? 0.5 : 1,
                 }}
               >
-                {arrOptions.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+                {allowedArrivals.length === 0 ? (
+                  <option value="">No routes available</option>
+                ) : (
+                  allowedArrivals.map((isl) => (
+                    <option key={isl.id} value={isl.id}>{isl.name}</option>
+                  ))
+                )}
               </select>
+
+              {/* Route badge showing allowed count */}
+              <div style={{ marginTop: 5, fontSize: "11px", color: "#94a3b8" }}>
+                {allowedArrivals.length} route{allowedArrivals.length !== 1 ? "s" : ""} available from this port
+              </div>
             </div>
           </div>
 
@@ -762,11 +815,12 @@ export default function NearestIslandRecommendation() {
             {candidates.map((isl, i) => {
               const rc = RANK_CONFIG[i] || RANK_CONFIG[5];
               const isTop3 = i < 3;
+              const isSelectable = allowedArrivals.some((a) => a.id === isl.id);
 
               return (
                 <div
                   key={isl.id}
-                  onClick={() => setArrId(isl.id)}
+                  onClick={() => { if (isSelectable) setArrId(isl.id); }}
                   style={{
                     display: "flex",
                     alignItems: "center",
@@ -775,10 +829,12 @@ export default function NearestIslandRecommendation() {
                     borderRadius: 9,
                     border: `1px solid ${isTop3 ? rc.border : "#f1f5f9"}`,
                     background: isTop3 ? rc.cardBg : "#ffffff",
-                    cursor: "pointer",
+                    cursor: isSelectable ? "pointer" : "default",
+                    opacity: isSelectable ? 1 : 0.6,
                     transition: "all 0.15s",
                   }}
                   onMouseEnter={(e) => {
+                    if (!isSelectable) return;
                     (e.currentTarget as HTMLElement).style.borderColor = rc.activeBorder;
                     (e.currentTarget as HTMLElement).style.background = rc.cardBg;
                   }}
@@ -829,6 +885,21 @@ export default function NearestIslandRecommendation() {
                           On map
                         </span>
                       )}
+                      {isSelectable && (
+                        <span
+                          style={{
+                            background: "#dcfce7",
+                            color: "#15803d",
+                            fontSize: "10px",
+                            fontWeight: 700,
+                            padding: "2px 7px",
+                            borderRadius: 4,
+                            border: "1px solid #bbf7d0",
+                          }}
+                        >
+                          ✓ Routable
+                        </span>
+                      )}
                     </div>
                     <p style={{ fontSize: "12px", color: "#64748b", marginTop: 2 }}>{isl.info}</p>
                     <p style={{ fontSize: "11px", color: "#94a3b8", marginTop: 1 }}>
@@ -842,7 +913,7 @@ export default function NearestIslandRecommendation() {
                       {isl.dist.toFixed(1)} km
                     </div>
                     <div style={{ fontSize: "10px", color: "#cbd5e1" }}>off route</div>
-                    <ChevronRight size={15} color={isTop3 ? rc.activeBorder : "#cbd5e1"} />
+                    {isSelectable && <ChevronRight size={15} color={isTop3 ? rc.activeBorder : "#cbd5e1"} />}
                   </div>
                 </div>
               );
