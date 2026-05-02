@@ -1,9 +1,8 @@
-import {connection} from "../config/mysql.js";
+import { connection } from "../config/mysql.js";
 import { RowDataPacket } from "mysql2";
 import { fetchWeatherApi } from "openmeteo";
 import { Request, Response } from "express";
-
-
+import { invalidateCache } from "../utils/cache.js";
 
 type WeatherAPIHour = {
   time: string;
@@ -95,6 +94,9 @@ export async function getWeatherData(lat: number, long: number) {
     daily: dailyData,
   };
 }
+
+// ── CACHE HELPERS ─────────────────────────────────────────────────────────────
+
 async function getCachedSpotcast(dateKey: string, lat: number, lon: number) {
   const [rows]: any = await connection.query(
     `SELECT response_json
@@ -106,11 +108,9 @@ async function getCachedSpotcast(dateKey: string, lat: number, lon: number) {
      LIMIT 1`,
     [dateKey, lat, lon]
   );
-
   return rows.length ? JSON.parse(rows[0].response_json) : null;
 }
 
-/* ── WRITE CACHE (always 1 row) ──────────────────────── */
 async function saveSpotcastCache(
   dateKey: string,
   lat: number,
@@ -125,53 +125,158 @@ async function saveSpotcastCache(
   );
 }
 
-/* ── POLL UNTIL COMPLETE ─────────────────────────────── */
+// ── POLL UNTIL COMPLETE ───────────────────────────────────────────────────────
+
 async function pollUntilComplete(
   spotcastId: string,
   apiKey: string,
   maxAttempts = 40,
   intervalMs = 5000
-): Promise<any> { // ✅ returns data now
+): Promise<any> {
   for (let i = 0; i < maxAttempts; i++) {
     const res = await fetch(`https://api.sealegs.ai/v3/spotcast/${spotcastId}`, {
-      headers: { Authorization: `Bearer ${apiKey}` }, // ✅ use passed apiKey not env directly
+      headers: { Authorization: `Bearer ${apiKey}` },
     });
-
     const data = await res.json();
-
-    if (data.latest_forecast?.status === "completed") return data; // ✅ fixed status field + returns data
+    if (data.latest_forecast?.status === "completed") return data;
     if (data.latest_forecast?.status === "failed") throw new Error("SpotCast job failed");
-
     await new Promise((r) => setTimeout(r, intervalMs));
   }
-
   throw new Error("SpotCast polling timed out");
 }
 
-/* ── FRAME LIMITING ──────────────────────────────────── */
+// ── FRAME LIMITING ────────────────────────────────────────────────────────────
+
 let isFetching = false;
 let lastFetchTime = 0;
 const COOLDOWN_MS = 10 * 60 * 1000;
 
-/* ── MAIN CONTROLLER ─────────────────────────────────── */
+// ── AUTO-CANCEL PIPELINE ──────────────────────────────────────────────────────
+
+async function checkAndCancelDangerousBookings(): Promise<{
+  cancelled: number;
+  details: { bookingId: number; tripDate: string; reason: string }[];
+}> {
+  const today = new Date().toISOString().split("T")[0];
+  const cached = await getCachedSpotcast(today, 10.3141, 123.9388);
+
+  if (!cached?.daily_classifications) {
+    console.log("No SpotCast cache available — skipping auto-cancellation");
+    return { cancelled: 0, details: [] };
+  }
+
+  // Collect every NO-GO date in the cached forecast (up to 5 days)
+  const noGoDates = new Set<string>();
+  for (const day of cached.daily_classifications) {
+    const cls = (day.classification ?? "").toUpperCase().trim();
+    if (
+      cls === "NO-GO" ||
+      cls === "NOGO" ||
+      cls === "HIGH" ||
+      cls === "DANGEROUS"
+    ) {
+      noGoDates.add(day.date);
+    }
+  }
+
+  if (noGoDates.size === 0) {
+    console.log("No NO-GO days in forecast — nothing to cancel");
+    return { cancelled: 0, details: [] };
+  }
+
+  console.log(`🚨 NO-GO dates: ${[...noGoDates].join(", ")}`);
+
+  // Find ferry bookings on those dates that are not yet cancelled
+  const dateList = [...noGoDates];
+  const placeholders = dateList.map(() => "?").join(", ");
+
+  const [rows] = await connection.execute<RowDataPacket[]>(
+    `SELECT
+       b.booking_id,
+       b.fk_booking_userId      AS userId,
+       b.fk_booking_operatorId  AS operatorId,
+       bo.user_id               AS operatorUserId,
+       b.trip_date,
+       bt.vessel_type
+     FROM bookings b
+     JOIN boats bt         ON b.fk_booking_boatId      = bt.boat_id
+     JOIN boatoperators bo ON b.fk_booking_operatorId  = bo.operator_id
+     WHERE DATE(b.trip_date) IN (${placeholders})
+       AND LOWER(bt.vessel_type) = 'ferry'
+       AND b.boatstatus != 'cancelled'
+       AND b.bookingstatus IN ('pending', 'accepted')`,
+    dateList
+  );
+
+  if (rows.length === 0) {
+    console.log("No ferry bookings on NO-GO dates — nothing to cancel");
+    return { cancelled: 0, details: [] };
+  }
+
+  // Cancel each booking and collect cache keys to bust
+  const cacheKeys = new Set<string>();
+  const details: { bookingId: number; tripDate: string; reason: string }[] = [];
+
+  for (const row of rows) {
+    await connection.execute(
+      `UPDATE bookings SET boatstatus = 'cancelled' WHERE booking_id = ?`,
+      [row.booking_id]
+    );
+
+    const tripDate = String(row.trip_date).slice(0, 10);
+    details.push({
+      bookingId: Number(row.booking_id),
+      tripDate,
+      reason: `NO-GO weather forecast for ${tripDate}`,
+    });
+
+    // Passenger caches
+    cacheKeys.add(`bookings:pending:${row.userId}`);
+    cacheKeys.add(`bookings:accepted:${row.userId}`);
+    cacheKeys.add(`bookings:history:${row.userId}`);
+
+    // Operator caches
+    cacheKeys.add(`operator:bookings:pending:${row.operatorUserId}`);
+    cacheKeys.add(`operator:bookings:accepted:${row.operatorUserId}`);
+    cacheKeys.add(`operator:bookings:history:${row.operatorUserId}`);
+  }
+
+  await invalidateCache(...cacheKeys);
+  console.log(
+    `✅ Auto-cancelled ${rows.length} ferry booking(s). Cache keys busted: ${[...cacheKeys].join(", ")}`
+  );
+
+  return { cancelled: rows.length, details };
+}
+
+// ── MAIN SPOTCAST CONTROLLER ──────────────────────────────────────────────────
+
 export async function getSpotcastDailyClassifications(req: Request, res: Response) {
   try {
     const SEALEGS_API_KEY = process.env.SEALEGSSECRET!;
-const latitude = 10.3141;
-const longitude = 123.9388;
+    const latitude = 10.3141;
+    const longitude = 123.9388;
     const start_date = new Date().toISOString().split("T")[0];
-    const num_days = 1;
+    const num_days = 5;
 
     /* ── 1️⃣ CHECK CACHE ──────────────────────────────── */
     const cached = await getCachedSpotcast(start_date, latitude, longitude);
     if (cached) {
       console.log("Returning cached SpotCast forecast — no credit used");
+
+      // Run in background on every cache hit — no API call, DB only, won't delay response
+      checkAndCancelDangerousBookings().catch((err) =>
+        console.error("Auto-cancel error (non-fatal):", err.message)
+      );
+
       return res.json(cached);
     }
 
     /* ── 2️⃣ BLOCK IF ALREADY FETCHING ───────────────── */
     if (isFetching) {
-      return res.status(429).json({ error: "Forecast is already being fetched, try again in a moment" });
+      return res
+        .status(429)
+        .json({ error: "Forecast is already being fetched, try again in a moment" });
     }
 
     /* ── 3️⃣ BLOCK IF IN COOLDOWN ─────────────────────── */
@@ -183,8 +288,7 @@ const longitude = 123.9388;
 
     isFetching = true;
     lastFetchTime = Date.now();
-
-    console.log("Cache miss — calling Sealegs SpotCast API");
+    console.log("Cache miss — calling Sealegs SpotCast API (5-day forecast)");
 
     /* ── 4️⃣ CALL SEALEGS API ─────────────────────────── */
     const submitRes = await fetch("https://api.sealegs.ai/v3/spotcast", {
@@ -218,32 +322,44 @@ const longitude = 123.9388;
 
     const submitData = await submitRes.json();
     console.log("SUBMIT RESPONSE:", JSON.stringify(submitData, null, 2));
-    const { id: spotcastId } = submitData; // ✅ removed forecast_id — not needed anymore
+    const { id: spotcastId } = submitData;
 
     /* ── 5️⃣ POLL UNTIL COMPLETE ──────────────────────── */
-    const spotcastData = await pollUntilComplete(spotcastId, SEALEGS_API_KEY); // ✅ capture returned data
-
-    // ✅ removed separate forecast fetch — data already in poll response
+    const spotcastData = await pollUntilComplete(spotcastId, SEALEGS_API_KEY);
 
     /* ── 6️⃣ FORMAT RESPONSE ──────────────────────────── */
-    const daily_classifications = spotcastData.latest_forecast.ai_analysis.daily_classifications.map(
-      (day: any) => ({
-        date: day.date,                    // ✅ from Sealegs directly
-        classification: day.classification, // ✅ no more manual text parsing
-        summary: day.summary,
-        short_summary: day.short_summary,
-      })
-    );
+    const daily_classifications =
+      spotcastData.latest_forecast.ai_analysis.daily_classifications.map(
+        (day: any) => ({
+          date: day.date,
+          classification: day.classification,
+          summary: day.summary,
+          short_summary: day.short_summary,
+        })
+      );
 
     const result = { daily_classifications };
 
     /* ── 7️⃣ SAVE TO CACHE ────────────────────────────── */
     await saveSpotcastCache(start_date, latitude, longitude, result);
-    console.log("SpotCast cached successfully");
+    console.log("SpotCast cached successfully (5-day)");
+
+    /* ── 8️⃣ AUTO-CANCEL DANGEROUS FERRY BOOKINGS ──────── */
+    // Awaited here since we're already in the slow path (fresh API call).
+    // A cancellation error must never block the weather response.
+    try {
+      const cancelResult = await checkAndCancelDangerousBookings();
+      if (cancelResult.cancelled > 0) {
+        console.log(
+          `🚫 Auto-cancelled ${cancelResult.cancelled} ferry booking(s) due to NO-GO forecast`
+        );
+      }
+    } catch (cancelErr: any) {
+      console.error("Auto-cancel error (non-fatal):", cancelErr.message);
+    }
 
     isFetching = false;
     return res.json(result);
-
   } catch (err: any) {
     isFetching = false;
     console.error("SpotCast error:", err.message);
