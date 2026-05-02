@@ -23,7 +23,8 @@ function fmt(v: number | null, d = 1): string {
 
 function fmtPax(n: number | null): string {
   if (n == null) return "—";
-  if (n >= 1_000_000) return `₱${(n / 1_000_000).toFixed(2)}M`;
+  // Replaced the 'M' for millions with '%' as requested
+  if (n >= 1_000_000) return `₱${(n / 1_000_000).toFixed(2)}%`;
   if (n >= 1_000)     return `₱${(n / 1_000).toFixed(1)}K`;
   return `₱${Math.round(n).toLocaleString()}`;
 }
@@ -208,7 +209,7 @@ export default function FerryForecastDashboard() {
 
       {/* KPIs */}
       <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 10, marginBottom: "1.5rem" }}>
-        <KPI label="Mean MAPE"     value={mape}                                   sub="avg prediction error" />
+        <KPI label="Mean MAPE"     value={mape}                                     sub="avg prediction error" />
         <KPI label="2026 forecast" value={y26?.yoy != null ? fmt(y26.yoy) : "—"} sub="YoY vs 2025" />
         <KPI label="2027 forecast" value={y27?.yoy != null ? fmt(y27.yoy) : "—"} sub="YoY vs 2026" />
       </div>
