@@ -10,17 +10,25 @@ const BOATS_TTL   = 300;
 const BOOKING_TTL = 60;
 const HISTORY_TTL = 120;
 const PROFILE_TTL = 300;
-// Shared matrix cache — avoids full table scan on every recommendation request
 const MATRIX_TTL  = 120;
 
-const REPEAT_INTERACTION_PENALTY = 0.35;
-const BOOKED_PENALTY             = 0.10;
+// Soft penalties — suppress already-seen boats rather than hiding them
+const REPEAT_INTERACTION_PENALTY = 0.40;
+const BOOKED_PENALTY             = 0.12;
 const DECAY_HALF_LIFE_DAYS       = 30;
+
+// Minimum cosine similarity to consider a neighbour relevant
+const MIN_SIMILARITY = 0.10;
+
+// How many nearest neighbours to use (keeps CF focused)
+const MAX_NEIGHBOURS = 50;
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 export type InteractionType = "book" | "click" | "search";
 
-type UserBoatMatrix = Record<string, Record<string, number>>;
+// Normalised per-user vector: boat_id → score ∈ [0, 1]
+type UserVector = Record<string, number>;
+type UserBoatMatrix = Record<string, UserVector>;
 
 interface BoatRow extends RowDataPacket {
   boat_id:              string;
@@ -66,14 +74,15 @@ async function insertLog(
 }
 
 // ─── Cosine similarity ────────────────────────────────────────────────────────
+// Both vectors are already L2-normalised so this is simply the dot product.
 function cosineSimilarity(
-  vecA: Record<string, number>,
-  vecB: Record<string, number>
+  vecA: UserVector,
+  vecB: UserVector
 ): number {
   let dot = 0, magA = 0, magB = 0;
   for (const key in vecA) {
     magA += vecA[key] * vecA[key];
-    if (vecB[key]) dot += vecA[key] * vecB[key];
+    if (vecB[key] !== undefined) dot += vecA[key] * vecB[key];
   }
   for (const key in vecB) magB += vecB[key] * vecB[key];
   const denom = Math.sqrt(magA) * Math.sqrt(magB);
@@ -86,6 +95,19 @@ function decayWeight(createdAt: Date | string | null): number {
   const ageMs   = Date.now() - new Date(createdAt).getTime();
   const ageDays = ageMs / (1000 * 60 * 60 * 24);
   return Math.pow(0.5, ageDays / DECAY_HALF_LIFE_DAYS);
+}
+
+// ─── L2 normalise a raw score vector ─────────────────────────────────────────
+// Prevents power-users (100s of clicks) from dominating neighbourhood scores.
+// After normalisation every user vector has magnitude 1.
+function l2Normalise(raw: Record<string, number>): UserVector {
+  let mag = 0;
+  for (const k in raw) mag += raw[k] * raw[k];
+  if (mag === 0) return {};
+  const scale = 1 / Math.sqrt(mag);
+  const out: UserVector = {};
+  for (const k in raw) out[k] = raw[k] * scale;
+  return out;
 }
 
 // ─── All Boats ────────────────────────────────────────────────────────────────
@@ -111,13 +133,13 @@ export async function getAllBoats(): Promise<BoatRow[]> {
 }
 
 // ─── Track interaction ────────────────────────────────────────────────────────
-// FIX: Skip boatId === 0 (route-only searches) so junk rows don't pollute the matrix
 export async function trackInteraction(
   userId:      number,
   boatId:      number,
   type:        InteractionType,
   routeQuery?: string
 ): Promise<void> {
+  // Skip boatId 0 — route-only searches have no meaningful boat target
   if (!boatId || boatId === 0) return;
 
   try {
@@ -126,7 +148,6 @@ export async function trackInteraction(
        VALUES (?, ?, ?, ?)`,
       [userId, boatId, type, routeQuery ?? null]
     );
-    // Invalidate both per-user cache AND shared matrix cache
     await invalidateCache(
       `interactions:weighted:${userId}`,
       `cf:matrix:all`,
@@ -137,21 +158,29 @@ export async function trackInteraction(
   }
 }
 
-// ─── Build global user-boat matrix (CACHED) ───────────────────────────────────
+// ─── Build global user-boat matrix (CACHED, L2-normalised) ───────────────────
 //
-// BUG FIX: The old version ran a full table scan with NO caching on every single
-// recommendation request. This now caches the entire matrix for MATRIX_TTL seconds,
-// shared across all users. Invalidated whenever any booking or interaction is recorded.
+// Each row is a *normalised* preference vector for one user so that a user
+// with 200 clicks and a user with 4 clicks contribute equally to similarity
+// comparisons — only the *pattern* of preferences matters, not the volume.
 //
 async function buildDecayedMatrix(): Promise<{
   matrix:        UserBoatMatrix;
-  popularityMap: Record<string, number>;
+  rawPopularity: Record<string, number>;  // unnormalised, for cold-start ranking
+  validBoatIds:  Set<string>;             // only IDs present in the active boats table
 }> {
   return withCache("cf:matrix:all", MATRIX_TTL, async () => {
-    const matrix:        UserBoatMatrix          = {};
-    const popularityMap: Record<string, number>  = {};
+    // Fetch all active boat IDs so we can filter stale references
+    const [boatIdRows] = await connection.execute<RowDataPacket[]>(
+      `SELECT boat_id FROM boats
+       WHERE registration_status = 'verified' AND status = 'active'`
+    );
+    const validBoatIds = new Set<string>(boatIdRows.map(r => String(r.boat_id)));
 
-    // 1. Completed/accepted bookings — strongest signal, no decay
+    const rawMatrix:    Record<string, Record<string, number>> = {};
+    const rawPopularity: Record<string, number>                = {};
+
+    // 1. Accepted/completed bookings — strongest signal, no decay
     const [bookingRows] = await connection.execute<RowDataPacket[]>(
       `SELECT fk_booking_userId AS user_id, fk_booking_boatId AS boat_id
        FROM bookings
@@ -163,12 +192,14 @@ async function buildDecayedMatrix(): Promise<{
     for (const row of bookingRows) {
       const uid = String(row.user_id);
       const bid = String(row.boat_id);
-      if (!matrix[uid]) matrix[uid] = {};
-      matrix[uid][bid] = (matrix[uid][bid] ?? 0) + INTERACTION_WEIGHTS.book;
-      popularityMap[bid] = (popularityMap[bid] ?? 0) + INTERACTION_WEIGHTS.book;
+      if (!validBoatIds.has(bid)) continue;          // skip deleted/inactive boats
+
+      if (!rawMatrix[uid]) rawMatrix[uid] = {};
+      rawMatrix[uid][bid]   = (rawMatrix[uid][bid]   ?? 0) + INTERACTION_WEIGHTS.book;
+      rawPopularity[bid]    = (rawPopularity[bid]    ?? 0) + INTERACTION_WEIGHTS.book;
     }
 
-    // 2. Clicks / searches — lighter signal, apply time decay
+    // 2. Click / search interactions — lighter signal, time-decayed
     const [interactionRows] = await connection.execute<RowDataPacket[]>(
       `SELECT user_id, boat_id, interaction_type, created_at
        FROM user_interactions
@@ -178,105 +209,163 @@ async function buildDecayedMatrix(): Promise<{
     for (const row of interactionRows) {
       const uid    = String(row.user_id);
       const bid    = String(row.boat_id);
+      if (!validBoatIds.has(bid)) continue;
+
       const base   = INTERACTION_WEIGHTS[row.interaction_type as InteractionType] ?? 0;
       const weight = base * decayWeight(row.created_at);
-      if (!matrix[uid]) matrix[uid] = {};
-      matrix[uid][bid]   = (matrix[uid][bid]   ?? 0) + weight;
-      popularityMap[bid] = (popularityMap[bid]  ?? 0) + weight;
+
+      if (!rawMatrix[uid]) rawMatrix[uid] = {};
+      rawMatrix[uid][bid]  = (rawMatrix[uid][bid]  ?? 0) + weight;
+      rawPopularity[bid]   = (rawPopularity[bid]   ?? 0) + weight;
     }
 
-    return { matrix, popularityMap };
+    // 3. L2-normalise every user vector so magnitude ≠ interaction count
+    const matrix: UserBoatMatrix = {};
+    for (const uid in rawMatrix) {
+      matrix[uid] = l2Normalise(rawMatrix[uid]);
+    }
+
+    return { matrix, rawPopularity, validBoatIds };
   });
 }
 
 // ─── Weighted + decay CF recommendations ─────────────────────────────────────
+//
+//  Algorithm (item-based-neighbour CF with popularity fallback):
+//
+//  1. Build L2-normalised user vectors from bookings + decayed interactions.
+//  2. Compute cosine similarity between the target user and every other user.
+//  3. Keep only neighbours with similarity ≥ MIN_SIMILARITY (cuts noise).
+//  4. Cap at MAX_NEIGHBOURS nearest neighbours (prevents long-tail dilution).
+//  5. Weighted-average boat scores across neighbours: score[b] = Σ sim·vec[b].
+//  6. Apply soft penalties to suppress (not hide) already-seen boats.
+//  7. Fill remaining slots from global popularity when CF list is short.
+//
 export async function getRecommendedBoatsWeighted(
   userId: string,
   limit  = 6
 ): Promise<BoatRow[]> {
 
-  const [{ matrix, popularityMap }, allBoats, bookedBoatIds] = await Promise.all([
-    buildDecayedMatrix(),
-    getAllBoats(),
-    // Per-user booked set — needed to apply heavier penalty accurately
-    withCache(`user:booked:${userId}`, BOOKING_TTL, async () => {
-      const [rows] = await connection.execute<RowDataPacket[]>(
-        `SELECT DISTINCT fk_booking_boatId AS boat_id
-         FROM bookings
-         WHERE fk_booking_userId = ?
-           AND bookingstatus IN ('completed', 'accepted', 'pending')
-           AND fk_booking_boatId IS NOT NULL`,
-        [userId]
-      );
-      return new Set<string>(rows.map(r => String(r.boat_id)));
-    }),
-  ]);
+  const [{ matrix, rawPopularity, validBoatIds }, allBoats, bookedBoatIds] =
+    await Promise.all([
+      buildDecayedMatrix(),
+      getAllBoats(),
+      withCache(`user:booked:${userId}`, BOOKING_TTL, async () => {
+        const [rows] = await connection.execute<RowDataPacket[]>(
+          `SELECT DISTINCT fk_booking_boatId AS boat_id
+           FROM bookings
+           WHERE fk_booking_userId = ?
+             AND bookingstatus IN ('completed', 'accepted', 'pending')
+             AND fk_booking_boatId IS NOT NULL`,
+          [userId]
+        );
+        return new Set<string>(rows.map(r => String(r.boat_id)));
+      }),
+    ]);
+
+  // Index boats by ID for fast lookup; only include active+valid boats
+  const boatMap = new Map<string, BoatRow>(
+    (allBoats as BoatRow[])
+      .filter(b => validBoatIds.has(String(b.boat_id)))
+      .map(b => [String(b.boat_id), b])
+  );
 
   const currentVec       = matrix[userId] ?? {};
   const interactedByUser = new Set(Object.keys(currentVec));
   const hasHistory       = interactedByUser.size > 0;
 
-  const boatMap = new Map<string, BoatRow>(
-    (allBoats as BoatRow[]).map(b => [String(b.boat_id), b])
-  );
-
-  // ── Cold start: no history → sorted by global popularity ─────────────────
+  // ── Cold start: user has no interaction history ───────────────────────────
+  // Rank by global popularity (total weighted interactions), excluding nothing —
+  // a new user should see the most popular boats unconditionally.
   if (!hasHistory) {
     return (allBoats as BoatRow[])
-      .map(b => ({ ...b, score: popularityMap[String(b.boat_id)] ?? 0 }))
+      .filter(b => validBoatIds.has(String(b.boat_id)))
+      .map(b => ({ ...b, score: rawPopularity[String(b.boat_id)] ?? 0 }))
       .sort((a, b) => (b.score ?? 0) - (a.score ?? 0))
       .slice(0, limit);
   }
 
-  // ── CF scoring ────────────────────────────────────────────────────────────
-  const boatScore: Record<string, number> = {};
+  // ── Step 1: find neighbours sorted by descending similarity ──────────────
+  const neighbours: Array<{ uid: string; sim: number }> = [];
 
   for (const otherUid in matrix) {
     if (otherUid === userId) continue;
     const sim = cosineSimilarity(currentVec, matrix[otherUid]);
-    if (sim <= 0) continue;
-    for (const bid in matrix[otherUid]) {
-      boatScore[bid] = (boatScore[bid] ?? 0) + sim * matrix[otherUid][bid];
+    if (sim >= MIN_SIMILARITY) {
+      neighbours.push({ uid: otherUid, sim });
     }
   }
 
-  // ── No CF neighbours yet → fall back to popularity (excluding booked) ────
-  if (Object.keys(boatScore).length === 0) {
+  // Sort descending and take only the top-K nearest neighbours
+  neighbours.sort((a, b) => b.sim - a.sim);
+  const topNeighbours = neighbours.slice(0, MAX_NEIGHBOURS);
+
+  // ── Step 2: aggregate boat scores from neighbours ─────────────────────────
+  // score[boat] = Σ (similarity × neighbour's normalised preference for that boat)
+  // Using the *normalised* neighbour vector means we're measuring pattern match,
+  // not raw click volume.
+  const boatScore: Record<string, number> = {};
+
+  for (const { uid, sim } of topNeighbours) {
+    for (const bid in matrix[uid]) {
+      if (!boatMap.has(bid)) continue;       // boat no longer active
+      boatScore[bid] = (boatScore[bid] ?? 0) + sim * matrix[uid][bid];
+    }
+  }
+
+  // ── No neighbours at all → full popularity fallback ──────────────────────
+  if (topNeighbours.length === 0) {
     return (allBoats as BoatRow[])
-      .filter(b => !(bookedBoatIds as Set<string>).has(String(b.boat_id)))
-      .map(b => ({ ...b, score: popularityMap[String(b.boat_id)] ?? 0 }))
+      .filter(b => {
+        const bid = String(b.boat_id);
+        return validBoatIds.has(bid) && !(bookedBoatIds as Set<string>).has(bid);
+      })
+      .map(b => ({ ...b, score: rawPopularity[String(b.boat_id)] ?? 0 }))
       .sort((a, b) => (b.score ?? 0) - (a.score ?? 0))
       .slice(0, limit);
   }
 
-  // ── Apply soft penalties ──────────────────────────────────────────────────
+  // ── Step 3: apply soft penalties, rank, slice ─────────────────────────────
   const penaltyFor = (bid: string): number => {
     if ((bookedBoatIds as Set<string>).has(bid)) return BOOKED_PENALTY;
     if (interactedByUser.has(bid))               return REPEAT_INTERACTION_PENALTY;
     return 1.0;
   };
 
-  const scored: ScoredBoatRow[] = Object.entries(boatScore)
-    .map(([bid, rawScore]): ScoredBoatRow | undefined => {
-      const boat = boatMap.get(bid);
-      if (!boat) return undefined;
+  const scored: ScoredBoatRow[] = Array.from(boatMap.values())
+    .map((boat): ScoredBoatRow | undefined => {
+      const bid = String(boat.boat_id);
+      // Only include boats that appeared in CF scores OR the current user's
+      // own history (penalised). Boats with no CF signal AND no user history
+      // go to the popularity fill step below.
+      const cfScore = boatScore[bid];
+      if (cfScore === undefined && !interactedByUser.has(bid) && !(bookedBoatIds as Set<string>).has(bid)) {
+        return undefined;
+      }
+      const rawScore = cfScore ?? 0;
       return { ...boat, score: rawScore * penaltyFor(bid) };
     })
     .filter((b): b is ScoredBoatRow => b !== undefined)
     .sort((a, b) => b.score - a.score)
     .slice(0, limit);
 
-  // ── Popularity fill if CF list is short ───────────────────────────────────
+  // ── Step 4: popularity fill when CF list is shorter than limit ────────────
   if (scored.length < limit) {
     const scoredIds = new Set(scored.map(b => String(b.boat_id)));
     const popular = (allBoats as BoatRow[])
       .filter(b => {
         const bid = String(b.boat_id);
-        return !scoredIds.has(bid) && !(bookedBoatIds as Set<string>).has(bid);
+        return (
+          validBoatIds.has(bid) &&
+          !scoredIds.has(bid) &&
+          !(bookedBoatIds as Set<string>).has(bid) &&
+          !interactedByUser.has(bid)           // don't double-show penalised boats
+        );
       })
-      .map(b => ({ ...b, score: popularityMap[String(b.boat_id)] ?? 0 }))
+      .map(b => ({ ...b, score: rawPopularity[String(b.boat_id)] ?? 0 }))
       .sort((a, b) => (b.score ?? 0) - (a.score ?? 0))
       .slice(0, limit - scored.length);
+
     return [...scored, ...popular];
   }
 
@@ -284,13 +373,13 @@ export async function getRecommendedBoatsWeighted(
 }
 
 // ─── Legacy CF (booking-only, kept for backwards compat) ─────────────────────
-async function buildUserBoatMatrix(): Promise<UserBoatMatrix> {
+async function buildUserBoatMatrix(): Promise<Record<string, Record<string, number>>> {
   const [rows] = await connection.execute<RowDataPacket[]>(
     `SELECT fk_booking_userId AS user_id, fk_booking_boatId AS boat_id
      FROM bookings
      WHERE bookingstatus IN ('completed', 'accepted')`
   );
-  const matrix: UserBoatMatrix = {};
+  const matrix: Record<string, Record<string, number>> = {};
   for (const row of rows) {
     const uid = String(row.user_id);
     const bid = String(row.boat_id);
@@ -350,7 +439,7 @@ export async function getRecommendedBoats(userId: string, limit = 6): Promise<Bo
   return scored;
 }
 
-// ─── Remaining service functions (unchanged) ──────────────────────────────────
+// ─── Search ───────────────────────────────────────────────────────────────────
 
 export async function searchrouteandtime(query: any = {}) {
   const routeFrom     = query.routeFrom     ?? null;

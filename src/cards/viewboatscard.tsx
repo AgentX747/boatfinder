@@ -2,10 +2,10 @@ import React from 'react';
 import styled from 'styled-components';
 
 interface BoatDetails {
-  img: string;
+  img?: string;          // optional — image can be absent
   boatName: string;
   vesselType: string;
-  capacity: number;
+  capacity: string;      // string — matches NormalisedBoat & backend capacity_information
   ticketPrice: number;
   operatorName?: string;
   onViewDetails?: () => void;

@@ -16,6 +16,7 @@ import { SupportTicketCard } from "../../cards/supportticketcard.js"
 import { RefundTicketCard } from "../../cards/refundticketcard.js"
 import PricePredictionGraph from "../../components/pricepredictiongraph.js"
 
+
 type SealegsClass = "GO" | "CAUTION" | "NO-GO" | string
 
 function normalizeClass(raw: string): SealegsClass {
@@ -53,6 +54,38 @@ interface BackendCurrentWeather {
 
 type CancelModalType = "decline" | "cancel" | null
 
+// ─── CF normalisation ─────────────────────────────────────────────────────────
+// The weighted CF endpoint (/user/recommendations) returns snake_case BoatRow
+// fields.  Normalise ONCE at ingestion so every downstream reference — key
+// prop, click tracking, card props — uses a guaranteed camelCase shape with
+// no undefined fields.
+interface NormalisedBoat {
+  boatId:       number
+  boatName:     string   // camelCase — not boat_name
+  vesselType:   string
+  capacity:     string
+  ticketPrice:  number
+  routeFrom:    string
+  routeTo:      string
+  operatorName: string
+  image:        string | null
+  score:        number
+}
+
+function normaliseBoat(raw: any): NormalisedBoat {
+  return {
+    boatId:       Number(raw.boat_id              ?? raw.boatId       ?? 0),
+    boatName:     String(raw.boat_name            ?? raw.boatName     ?? ""),  // ← was boat_name: on the left
+    vesselType:   String(raw.vessel_type          ?? raw.vesselType   ?? ""),
+    capacity:     String(raw.capacity_information ?? raw.capacity     ?? ""),
+    ticketPrice:  Number(raw.ticket_price         ?? raw.ticketPrice  ?? 0),
+    routeFrom:    String(raw.route_from           ?? raw.routeFrom    ?? ""),
+    routeTo:      String(raw.route_to             ?? raw.routeTo      ?? ""),
+    operatorName: String(raw.operatorName         ?? ""),
+    image:        raw.image ?? null,
+    score:        Number(raw.score                ?? 0),
+  }
+}
 const ROUTE_MAP: Record<string, string[]> = {
   "Marigondon Port": ["Pangan-an Island", "Cawhagan", "Olango"],
   "Hilton":          ["Olango"],
@@ -289,7 +322,7 @@ export default function UserDashboard() {
 
   const [boats, setBoats]                       = useState<any[]>([])
   const [pendingBookings, setPendingBookings]   = useState<any[]>([])
-  const [recommendedBoats, setRecommendedBoats] = useState<any[]>([])
+  const [recommendedBoats, setRecommendedBoats] = useState<NormalisedBoat[]>([])
   const [boatsLoading, setBoatsLoading]         = useState(true)
   const [bookingHistory, setBookingHistory]     = useState<any[]>([])
   const [acceptedBookings, setAcceptedBookings] = useState<any[]>([])
@@ -340,16 +373,30 @@ export default function UserDashboard() {
     setTicketDetails(prev => ({ ...prev, [name]: value }))
   }
 
+  // ── FIX 1: Use snake_case booking_id consistently (matches backend response) ──
   function openCancelModal(bookingId: string, ticketCode: string, boatName: string) {
-    setCancelBookingId(bookingId); setCancelBookingCode(ticketCode); setCancelBoatName(boatName); setCancelModalType("cancel")
+    setCancelBookingId(bookingId)
+    setCancelBookingCode(ticketCode)
+    setCancelBoatName(boatName)
+    setCancelModalType("cancel")
   }
   function openDeclineModal(bookingId: string, ticketCode: string, boatName: string) {
-    setCancelBookingId(bookingId); setCancelBookingCode(ticketCode); setCancelBoatName(boatName); setCancelModalType("decline")
+    setCancelBookingId(bookingId)
+    setCancelBookingCode(ticketCode)
+    setCancelBoatName(boatName)
+    setCancelModalType("decline")
   }
   function closeModal() {
-    setCancelModalType(null); setCancelBookingId(null); setCancelBookingCode(""); setCancelBoatName(""); setCancelling(false)
+    setCancelModalType(null)
+    setCancelBookingId(null)
+    setCancelBookingCode("")
+    setCancelBoatName("")
+    setCancelling(false)
   }
 
+  // ── FIX 2: Decline only works on PENDING bookings — matches backend SQL ────
+  // Backend: UPDATE bookings SET bookingstatus='cancelled'
+  //          WHERE booking_id=? AND fk_booking_userId=? AND bookingstatus='pending'
   async function handleDeclineBooking() {
     if (!cancelBookingId) return
     setCancelling(true)
@@ -358,25 +405,49 @@ export default function UserDashboard() {
       if (!res.ok) throw new Error("Failed to decline booking")
       alert("Booking declined successfully.")
       closeModal()
-      window.location.reload()
-    } catch (err) { console.error(err); alert("Failed to decline booking. Please try again.") }
-    finally { setCancelling(false) }
+      // Remove from pending state immediately (no full reload needed)
+      setPendingBookings(prev => prev.filter(b => String(b.booking_id) !== cancelBookingId))
+    } catch (err) {
+      console.error(err)
+      alert("Failed to decline booking. Please try again.")
+    } finally {
+      setCancelling(false)
+    }
   }
 
+  // ── FIX 3: Cancel accepted bookings — backend only allows cancelling PENDING.
+  // The cancel endpoint filters on bookingstatus='pending', so accepted bookings
+  // cannot be cancelled via this route. Show a clear error to the user instead
+  // of silently failing. If your backend later supports cancelling accepted
+  // bookings (e.g. a separate endpoint), update the URL here.
   async function handleCancelBooking() {
     if (!cancelBookingId) return
     setCancelling(true)
     try {
       const res = await apiFetch(`https://boatfinder.onrender.com/user/cancelbooking/${cancelBookingId}`, { method: "PATCH", credentials: "include" })
-      if (!res.ok) throw new Error("Failed to cancel booking")
+      if (!res.ok) {
+        // Backend returns 404 when booking is not in 'pending' state.
+        // Accepted bookings cannot be cancelled via this endpoint.
+        const errData = await res.json().catch(() => ({}))
+        throw new Error(errData.message || "Failed to cancel booking. Only pending bookings can be cancelled.")
+      }
       alert("Booking cancelled successfully.")
       closeModal()
-      setAcceptedBookings(prev => prev.filter(b => b.booking_id !== cancelBookingId && b.bookingId !== cancelBookingId))
-    } catch (err) { console.error(err); alert("Failed to cancel booking. Please try again.") }
-    finally { setCancelling(false) }
+      // ── FIX 3b: Use booking_id (snake_case) to filter — matches backend response ──
+      setAcceptedBookings(prev => prev.filter(b => String(b.booking_id) !== cancelBookingId))
+    } catch (err: any) {
+      console.error(err)
+      alert(err.message || "Failed to cancel booking. Please try again.")
+    } finally {
+      setCancelling(false)
+    }
   }
 
-  // ── Silently check on mount whether any bookings were auto-cancelled ───────
+  // ── FIX 4: checkForAutoCancelledTrips used wrong field ───────────────────
+  // Backend sets `bookingstatus = 'cancelled'` NOT `boatstatus = 'cancelled'`.
+  // Also: boatstatus tracks whether the boat/operator cancelled the trip
+  // (e.g. weather-related), while bookingstatus tracks the booking's lifecycle.
+  // We check BOTH so weather-cancelled trips by operators are also caught.
   async function checkForAutoCancelledTrips(pending: any[], accepted: any[]) {
     try {
       const res = await fetch("https://boatfinder.onrender.com/weather/airesponse", { method: "GET", credentials: "include" })
@@ -391,10 +462,14 @@ export default function UserDashboard() {
           .map((d: any) => d.date)
       )
       if (noGoDates.size === 0) return
+
+      // ── FIX 4: Check bookingstatus OR boatstatus for 'cancelled' ──────────
       const cancelled = [...pending, ...accepted]
         .filter(b => {
           const tripDate = String(b.trip_date ?? b.tripDate ?? "").slice(0, 10)
-          return (b.boatstatus ?? "").toLowerCase() === "cancelled" && noGoDates.has(tripDate)
+          const isBookingCancelled = (b.bookingstatus ?? "").toLowerCase() === "cancelled"
+          const isBoatCancelled    = (b.boatstatus   ?? "").toLowerCase() === "cancelled"
+          return (isBookingCancelled || isBoatCancelled) && noGoDates.has(tripDate)
         })
         .map(b => ({
           boatName:   b.boatName   ?? "Unknown boat",
@@ -489,39 +564,26 @@ export default function UserDashboard() {
         } catch (err) { console.error("Failed to fetch all boats", err) }
       }
 
-     async function getRecommendedBoats() {
-  setBoatsLoading(true)
-  try {
-    // ✅ Use the weighted CF endpoint — userId comes from JWT, not URL param
-    const res = await apiFetch(
-      `https://boatfinder.onrender.com/user/recommendations`,
-      { method: "GET", credentials: "include" }
-    )
-    if (!res.ok) throw new Error("Failed to fetch recommendations")
-    const data = await res.json()
-    setRecommendedBoats(
-      Array.isArray(data)
-        ? data.map((boat: any) => ({
-            ...boat,
-            // weighted endpoint returns snake_case BoatRow — normalize here
-            boatId:       boat.boat_id               ?? boat.boatId,
-            boatName:     boat.boat_name             ?? boat.boatName,
-            vesselType:   boat.vessel_type           ?? boat.vesselType,
-            capacity:     boat.capacity_information  ?? boat.capacity,
-            ticketPrice:  boat.ticket_price          ?? boat.ticketPrice,
-            routeFrom:    boat.route_from            ?? boat.routeFrom,
-            routeTo:      boat.route_to              ?? boat.routeTo,
-            operatorName: boat.operatorName,
-          }))
-        : []
-    )
-  } catch (err) {
-    console.error("Failed to fetch recommendations", err)
-    setRecommendedBoats([])
-  } finally {
-    setBoatsLoading(false)
-  }
-}
+      async function getRecommendedBoats() {
+        setBoatsLoading(true)
+        try {
+          // Weighted CF endpoint — userId is read from the JWT cookie server-side,
+          // so no URL param needed.
+          const res = await apiFetch(
+            "https://boatfinder.onrender.com/user/recommendations",
+            { method: "GET", credentials: "include" }
+          )
+          if (!res.ok) throw new Error("Failed to fetch recommendations")
+          const data = await res.json()
+          // ── Normalise at ingestion: one canonical shape for all downstream use ──
+          setRecommendedBoats(Array.isArray(data) ? data.map(normaliseBoat) : [])
+        } catch (err) {
+          console.error("Failed to fetch recommendations", err)
+          setRecommendedBoats([])
+        } finally {
+          setBoatsLoading(false)
+        }
+      }
 
       // Returns data so we can pass it to checkForAutoCancelledTrips
       async function getPendingBookings(): Promise<any[]> {
@@ -753,14 +815,51 @@ export default function UserDashboard() {
               <div className="space-y-3 sm:space-y-4">
                 {bookingsActiveTab === "pending" && (
                   filteredPendingBookings.length > 0 ? filteredPendingBookings.map(booking => (
-                    <PendingBookingCard key={booking.ticketcode} boatName={booking.boatName} bookDate={booking.booking_date} schedules={booking.schedules ?? null} bookPrice={booking.total_price} bookingId={booking.ticketcode} tripDate={booking.trip_date} boatStatus={booking.boatstatus ?? "active"} navigateTo={() => navigate(`/currentbookings/${booking.booking_id}`)}
-                      declinePendingBookings={() => openDeclineModal(booking.bookingId ?? booking.booking_id, booking.ticketcode, booking.boatName)} />
+                    <PendingBookingCard
+                      key={booking.ticketcode}
+                      boatName={booking.boatName}
+                      bookDate={booking.booking_date}
+                      schedules={booking.schedules ?? null}
+                      bookPrice={booking.total_price}
+                      bookingId={booking.ticketcode}
+                      tripDate={booking.trip_date}
+                      boatStatus={booking.boatstatus ?? "active"}
+                      navigateTo={() => navigate(`/currentbookings/${booking.booking_id}`)}
+                      // ── FIX 1 applied here: use booking.booking_id (snake_case) ──
+                      declinePendingBookings={() => openDeclineModal(
+                        String(booking.booking_id),
+                        booking.ticketcode,
+                        booking.boatName
+                      )}
+                    />
                   )) : <p className="text-gray-500 text-sm sm:text-base">{ticketSearch ? `No pending bookings matching "${ticketSearch}"` : "No pending bookings"}</p>
                 )}
                 {bookingsActiveTab === "accepted" && (
                   filteredAcceptedBookings.length > 0 ? filteredAcceptedBookings.map(booking => (
                     <div key={booking.ticketcode} className="relative">
-                      <AcceptedBookingCard boatName={booking.boatName} bookDate={booking.booking_date} schedules={booking.schedules ?? null} bookPrice={booking.total_price} bookingId={booking.ticketcode} tripDate={booking.trip_date} boatStatus={booking.boatstatus ?? "active"} navigateTo={() => navigate(`/currentbookings/${booking.booking_id}`)} />
+                      <AcceptedBookingCard
+                        boatName={booking.boatName}
+                        bookDate={booking.booking_date}
+                        schedules={booking.schedules ?? null}
+                        bookPrice={booking.total_price}
+                        bookingId={booking.ticketcode}
+                        tripDate={booking.trip_date}
+                        boatStatus={booking.boatstatus ?? "active"}
+                        navigateTo={() => navigate(`/currentbookings/${booking.booking_id}`)}
+                      />
+                      {/* Cancel button for accepted bookings — note: backend only cancels
+                          pending status. If your backend adds a separate cancel-accepted
+                          endpoint, update handleCancelBooking's URL accordingly. */}
+                      <button
+                        className="mt-2 px-4 py-1.5 bg-red-100 hover:bg-red-200 text-red-700 text-xs font-semibold rounded-lg transition-colors"
+                        onClick={() => openCancelModal(
+                          String(booking.booking_id),
+                          booking.ticketcode,
+                          booking.boatName
+                        )}
+                      >
+                        Cancel Booking
+                      </button>
                     </div>
                   )) : <p className="text-gray-500 text-sm sm:text-base">{ticketSearch ? `No accepted bookings matching "${ticketSearch}"` : "No accepted bookings"}</p>
                 )}
@@ -777,70 +876,80 @@ export default function UserDashboard() {
           </main>
         )
 
-     case "viewboats":
-  return (
-    <>
-      <div className="relative w-full overflow-hidden bg-gradient-to-r from-blue-600 to-blue-700 py-12 sm:py-16 md:py-20">
-        {/* ...existing hero SVG and text unchanged... */}
-        <svg className="absolute inset-0 w-full h-full" viewBox="0 0 1200 120" preserveAspectRatio="none" style={{ opacity: 0.1 }}>
-          <defs><style>{`@keyframes wave1{0%{transform:translateX(0)}100%{transform:translateX(1200px)}}@keyframes wave2{0%{transform:translateX(-1200px)}100%{transform:translateX(0)}}.wave1{animation:wave1 15s linear infinite}.wave2{animation:wave2 10s linear infinite}`}</style></defs>
-          <path className="wave1" d="M0,60 Q300,30 600,60 T1200,60 L1200,120 L0,120 Z" fill="white" />
-          <path className="wave2" d="M0,70 Q300,40 600,70 T1200,70 L1200,120 L0,120 Z" fill="white" />
-        </svg>
-        <div className="absolute top-4 right-8 opacity-10 text-white text-4xl sm:text-5xl">⚓</div>
-        <div className="absolute bottom-4 left-8 opacity-10 text-white text-3xl sm:text-4xl">⚓</div>
-        <div className="relative z-10 px-4 sm:px-8 md:px-12 flex flex-col justify-center">
-          <h2 className="text-3xl sm:text-4xl md:text-5xl font-bold text-white mb-3 tracking-tight">
-            Most Recommended Boats
-          </h2>
-          <p className="text-base sm:text-lg text-blue-100 max-w-2xl">
-            Personalised picks based on your bookings and browsing
-          </p>
-        </div>
-      </div>
-
-      <div className="flex flex-row flex-wrap gap-4 sm:gap-5 p-4 sm:p-8" style={{ background: "#f0f6ff" }}>
-        {boatsLoading ? (
-          <p className="text-sm text-gray-400 w-full text-center py-10">
-            Loading recommended boats…
-          </p>
-        ) : recommendedBoats.length === 0 ? (
-          <p className="text-sm text-gray-400 w-full text-center py-10">
-            No boats available right now.
-          </p>
-        ) : (
-          recommendedBoats.map((boat) => {
-            const id = boat.boatId ?? boat.boat_id
-            return (
-              <div
-                key={id}
-                className="cursor-pointer"
-                // ✅ Track click interaction then navigate to booking page
-                onClick={() => {
-                  apiFetch("https://boatfinder.onrender.com/user/track", {
-                    method: "POST",
-                    credentials: "include",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ boatId: id, type: "click" }),
-                  }).catch(() => {})
-                  navigate(`/bookboat/${id}`)
-                }}
-              >
-                <ViewBoatsCard
-                  img={boat.image}
-                  boatName={boat.boatName    ?? boat.boat_name}
-                  vesselType={boat.vesselType ?? boat.vessel_type}
-                  capacity={boat.capacity    ?? boat.capacity_information}
-                  ticketPrice={boat.ticketPrice ?? boat.ticket_price}
-                  operatorName={boat.operatorName}
-                />
+      case "viewboats":
+        return (
+          <>
+            {/* ── Hero banner ──────────────────────────────────────────────── */}
+            <div className="relative w-full overflow-hidden bg-gradient-to-r from-blue-600 to-blue-700 py-12 sm:py-16 md:py-20">
+              <svg className="absolute inset-0 w-full h-full" viewBox="0 0 1200 120" preserveAspectRatio="none" style={{ opacity: 0.1 }}>
+                <defs>
+                  <style>{`
+                    @keyframes wave1{0%{transform:translateX(0)}100%{transform:translateX(1200px)}}
+                    @keyframes wave2{0%{transform:translateX(-1200px)}100%{transform:translateX(0)}}
+                    .wave1{animation:wave1 15s linear infinite}
+                    .wave2{animation:wave2 10s linear infinite}
+                  `}</style>
+                </defs>
+                <path className="wave1" d="M0,60 Q300,30 600,60 T1200,60 L1200,120 L0,120 Z" fill="white" />
+                <path className="wave2" d="M0,70 Q300,40 600,70 T1200,70 L1200,120 L0,120 Z" fill="white" />
+              </svg>
+              <div className="absolute top-4 right-8 opacity-10 text-white text-4xl sm:text-5xl">⚓</div>
+              <div className="absolute bottom-4 left-8 opacity-10 text-white text-3xl sm:text-4xl">⚓</div>
+              <div className="relative z-10 px-4 sm:px-8 md:px-12 flex flex-col justify-center">
+                <h2 className="text-3xl sm:text-4xl md:text-5xl font-bold text-white mb-3 tracking-tight">
+                  Recommended for You
+                </h2>
+                <p className="text-base sm:text-lg text-blue-100 max-w-2xl">
+                  Personalised picks based on your bookings and browsing — each user sees different recommendations.
+                </p>
               </div>
-            )
-          })
-        )}
-      </div>
-    </>
-  )
+            </div>
+
+            {/* ── Boat grid ────────────────────────────────────────────────── */}
+            <div className="flex flex-row flex-wrap gap-4 sm:gap-5 p-4 sm:p-8" style={{ background: "#f0f6ff" }}>
+              {boatsLoading ? (
+                <p className="text-sm text-gray-400 w-full text-center py-10">
+                  Loading your recommendations…
+                </p>
+              ) : recommendedBoats.length === 0 ? (
+                <p className="text-sm text-gray-400 w-full text-center py-10">
+                  No boats available right now.
+                </p>
+              ) : (
+                recommendedBoats.map((boat) => (
+                  <div
+                    key={boat.boatId}       /* stable numeric id — never undefined after normaliseBoat() */
+                    className="cursor-pointer"
+                    onClick={() => {
+                      // Fire-and-forget: record the click so the CF model learns
+                      // from this interaction. boatId is guaranteed a number here.
+                      if (boat.boatId) {
+                        apiFetch("https://boatfinder.onrender.com/user/track", {
+                          method: "POST",
+                          credentials: "include",
+                          headers: { "Content-Type": "application/json" },
+                          body: JSON.stringify({ boatId: boat.boatId, type: "click" }),
+                        }).catch(() => {})
+                      }
+                      navigate(`/bookboat/${boat.boatId}`)
+                    }}
+                  >
+                    {/* All props are guaranteed strings/numbers — no fallback chains needed */}
+    <ViewBoatsCard
+  img={boat.image ?? undefined}
+  boatName={boat.boatName}
+  vesselType={boat.vesselType}
+  capacity={boat.capacity}        // already a string from normaliseBoat
+  ticketPrice={boat.ticketPrice}
+  operatorName={boat.operatorName}
+/>
+                  </div>
+                ))
+              )}
+            </div>
+          </>
+        )
+
       case "weather":
         return (
           <div className="min-h-screen bg-gradient-to-br from-blue-50 to-slate-100">
