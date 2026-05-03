@@ -1,75 +1,130 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 
+// ─── API endpoints ────────────────────────────────────────────────────────────
 const API_N  = "https://ferryai.onrender.com/forecast/national";
 const API_S  = "https://ferryai.onrender.com/forecast/seasonal";
 const API_SC = "https://ferryai.onrender.com/scenario/all";
+const API_AI = "https://api.anthropic.com/v1/messages";
 
+// ─── Constants ────────────────────────────────────────────────────────────────
 const SCENARIO_COLOR: Record<string, string> = {
-  baseline: "#378ADD", mild: "#BA7517", moderate: "#D85A30", severe: "#E24B4A",
+  baseline: "#378ADD",
+  mild:     "#BA7517",
+  moderate: "#D85A30",
+  severe:   "#E24B4A",
 };
 const SCENARIO_LABEL: Record<string, string> = {
-  baseline: "Baseline", mild: "Mild (+15% oil)",
-  moderate: "Moderate (+35% oil)", severe: "Severe (+60% oil)",
+  baseline: "Baseline",
+  mild:     "Mild (+15% oil)",
+  moderate: "Moderate (+35% oil)",
+  severe:   "Severe (+60% oil)",
 };
 
 const BLUE = {
-  50: "#E6F1FB", 100: "#B5D4F4", 200: "#85B7EB",
-  400: "#378ADD", 600: "#185FA5", 800: "#0C447C", 900: "#042C53",
+  50:  "#E6F1FB",
+  100: "#B5D4F4",
+  200: "#85B7EB",
+  400: "#378ADD",
+  600: "#185FA5",
+  800: "#0C447C",
+  900: "#042C53",
 };
 
+const GREEN = { bg: "#EAF3DE", txt: "#27500A" };
+const RED   = { bg: "#FCEBEB", txt: "#791F1F" };
+const AMBER = { bg: "#FAEEDA", txt: "#633806" };
+
+// ─── Types ────────────────────────────────────────────────────────────────────
+type Tab = "monthly" | "yearly" | "seasonal" | "scenarios" | "ai";
+
+type DataPoint = {
+  year: number;
+  mn: number;
+  month: string;
+  val: number;
+  isFc: boolean;
+  oil_shock?: boolean;
+  mom?: number | null;
+};
+
+type ScenRow = {
+  scenario: string;
+  demand_change_pct: number;
+  diesel_php: number;
+  adjusted_M: number;
+};
+
+type AiRoute = {
+  route: string;
+  class: string;
+  now: string;
+  outlook_6mo: string;
+  risk: "HIGH" | "MODERATE" | "LOW";
+};
+
+type AiResult = {
+  peak_surge_period: string;
+  peak_surge_desc:   string;
+  price_pressure:    string;
+  price_pct:         string;
+  price_desc:        string;
+  insight:           string;
+  routes:            AiRoute[];
+};
+
+// ─── Helpers ──────────────────────────────────────────────────────────────────
 function fmt(v: number | null, d = 1): string {
-  return v != null ? `${v >= 0 ? "+" : ""}${v.toFixed(d)}%` : "—";
-}
-
-function fmtPax(n: number | null): string {
-  if (n == null) return "—";
-  // Replaced the 'M' for millions with '%' as requested
-  if (n >= 1_000_000) return `₱${(n / 1_000_000).toFixed(2)}%`;
-  if (n >= 1_000)     return `₱${(n / 1_000).toFixed(1)}K`;
-  return `₱${Math.round(n).toLocaleString()}`;
-}
-
-function fmtFull(n: number | null): string {
-  if (n == null) return "—";
-  return `₱${Math.round(n).toLocaleString()}`;
+  if (v == null) return "—";
+  return `${v >= 0 ? "+" : ""}${v.toFixed(d)}%`;
 }
 
 function pillStyle(v: number | null): React.CSSProperties {
   const base: React.CSSProperties = {
-    fontSize: 11, fontWeight: 500, padding: "3px 8px",
-    borderRadius: 99, minWidth: 62, textAlign: "center", whiteSpace: "nowrap",
+    fontSize: 11, fontWeight: 500, padding: "3px 9px",
+    borderRadius: 99, minWidth: 60, textAlign: "center",
+    whiteSpace: "nowrap", display: "inline-block",
   };
-  if (v == null) return { ...base, background: BLUE[50],    color: BLUE[800] };
-  if (v > 0)     return { ...base, background: "#EAF3DE",   color: "#27500A" };
-  return           { ...base, background: "#FCEBEB",   color: "#791F1F" };
+  if (v == null) return { ...base, background: BLUE[50],   color: BLUE[800] };
+  if (v > 0)     return { ...base, background: GREEN.bg,   color: GREEN.txt };
+  return           { ...base, background: RED.bg,     color: RED.txt };
 }
 
-function shapeColor(v: number | null) {
-  return v == null ? BLUE[600] : v > 0 ? "#27500A" : "#791F1F";
+function shapeColor(v: number | null): string {
+  return v == null ? BLUE[600] : v > 0 ? GREEN.txt : RED.txt;
 }
 
-function BarTrack({ pct, color, width = 110 }: { pct: number; color: string; width?: number }) {
+// ─── Sub-components ───────────────────────────────────────────────────────────
+function BarTrack({ pct, color, width = 90 }: { pct: number; color: string; width?: number }) {
   return (
-    <div style={{ width, height: 4, background: BLUE[50], borderRadius: 99, overflow: "hidden", flexShrink: 0 }}>
+    <div style={{ width, height: 3, background: BLUE[50], borderRadius: 99, overflow: "hidden", flexShrink: 0 }}>
       <div style={{ width: `${Math.min(100, pct)}%`, height: "100%", background: color, borderRadius: 99 }} />
     </div>
   );
 }
 
-function KPI({ label, value, sub }: { label: string; value: string; sub: string }) {
+function KPI({ label, value, sub, valueColor }: { label: string; value: string; sub: string; valueColor?: string }) {
   return (
-    <div style={{ background: BLUE[50], borderRadius: 8, padding: "14px 16px" }}>
-      <div style={{ fontSize: 11, color: BLUE[600], textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 6 }}>{label}</div>
-      <div style={{ fontSize: 22, fontWeight: 500, color: BLUE[900] }}>{value}</div>
-      <div style={{ fontSize: 12, color: BLUE[600], marginTop: 3 }}>{sub}</div>
+    <div style={{ background: BLUE[50], borderRadius: 10, padding: "14px 16px" }}>
+      <div style={{ fontSize: 10, color: BLUE[600], textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 6, fontWeight: 500 }}>
+        {label}
+      </div>
+      <div style={{ fontSize: 22, fontWeight: 500, color: valueColor ?? BLUE[900], marginBottom: 3 }}>
+        {value}
+      </div>
+      <div style={{ fontSize: 11, color: BLUE[600] }}>{sub}</div>
     </div>
   );
 }
 
 function Card({ label, children }: { label: string; children: React.ReactNode }) {
   return (
-    <div style={{ background: "#fff", border: `0.5px solid ${BLUE[100]}`, borderRadius: 12, padding: "1.25rem", marginBottom: "1rem" }}>
-      <div style={{ fontSize: 11, color: BLUE[600], textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 16, fontWeight: 500 }}>{label}</div>
+    <div style={{
+      background: "#fff", border: `0.5px solid ${BLUE[100]}`,
+      borderRadius: 14, padding: "1.1rem 1.25rem", marginBottom: 12,
+    }}>
+      <div style={{ fontSize: 10, color: BLUE[600], textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 14, fontWeight: 500 }}>
+        {label}
+      </div>
       {children}
     </div>
   );
@@ -78,19 +133,27 @@ function Card({ label, children }: { label: string; children: React.ReactNode })
 function Alert({ text, warn }: { text: string; warn?: boolean }) {
   return (
     <div style={{
-      padding: "12px 14px", borderRadius: 8, fontSize: 12, lineHeight: 1.7, marginBottom: "1rem",
-      background: warn ? "#FAECE7" : BLUE[50],
-      border: `0.5px solid ${warn ? "#F0997B" : BLUE[200]}`,
-      color: warn ? "#4A1B0C" : BLUE[900],
-    }}>{text}</div>
+      padding: "11px 14px", borderRadius: 10, fontSize: 12, lineHeight: 1.65, marginBottom: 12,
+      background: warn ? AMBER.bg : BLUE[50],
+      border:     `0.5px solid ${warn ? "#EF9F27" : BLUE[200]}`,
+      color:      warn ? AMBER.txt : BLUE[800],
+    }}>
+      {text}
+    </div>
   );
 }
 
-function ColHeader({ cols }: { cols: { label: string; align?: "left" | "right" | "center"; width?: number }[] }) {
+function ColHeader({ cols }: { cols: { label: string; align?: "left" | "right" | "center"; width?: number; flex?: number }[] }) {
   return (
-    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "0 0 8px", borderBottom: `0.5px solid ${BLUE[100]}`, marginBottom: 4 }}>
+    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", paddingBottom: 8, borderBottom: `0.5px solid ${BLUE[100]}`, marginBottom: 4 }}>
       {cols.map((c, i) => (
-        <span key={i} style={{ fontSize: 11, color: BLUE[600], fontWeight: 500, minWidth: c.width, textAlign: c.align || "left", flex: i === 0 ? "none" : i === 1 ? 1 : "none", paddingLeft: i > 0 ? 8 : 0 }}>
+        <span key={i} style={{
+          fontSize: 10, color: BLUE[600], fontWeight: 500,
+          textTransform: "uppercase", letterSpacing: "0.07em",
+          minWidth: c.width, textAlign: c.align ?? "left",
+          flex: c.flex != null ? c.flex : i === 1 ? 1 : "none",
+          paddingLeft: i > 0 ? 8 : 0,
+        }}>
           {c.label}
         </span>
       ))}
@@ -98,37 +161,225 @@ function ColHeader({ cols }: { cols: { label: string; align?: "left" | "right" |
   );
 }
 
-type DataPoint = {
-  year: number; mn: number; month: string; val: number;
-  isFc: boolean; oil_shock?: boolean; mom?: number | null;
+const ROW: React.CSSProperties = {
+  display: "flex", alignItems: "center", justifyContent: "space-between",
+  padding: "10px 0", borderBottom: `0.5px solid ${BLUE[50]}`,
 };
 
+// ─── AI Predictions tab ───────────────────────────────────────────────────────
+function AiPredictionsTab({
+  fcOnly, scenArr, hm, fm, mns,
+}: {
+  fcOnly: DataPoint[];
+  scenArr: ScenRow[];
+  hm: Record<number, { month: string; avg: number }>;
+  fm: Record<number, { month: string; avg: number }>;
+  mns: number[];
+}) {
+  const [result, setResult]   = useState<AiResult | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [err, setErr]         = useState<string | null>(null);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    setErr(null);
+    try {
+      const monthStr = fcOnly.slice(0, 12)
+        .map(d => `${d.month} ${d.year}: MoM=${d.mom != null ? d.mom.toFixed(1) + "%" : "—"}${d.oil_shock ? " [OIL SHOCK]" : ""}`)
+        .join(", ");
+      const scenStr = scenArr
+        .map(s => `${s.scenario}: demand ${s.demand_change_pct >= 0 ? "+" : ""}${(+s.demand_change_pct).toFixed(1)}%, diesel ₱${(+s.diesel_php).toFixed(0)}/L`)
+        .join("; ");
+      const seaStr = mns
+        .map(mn => `${fm[mn]?.month ?? mn}: forecast avg ${fm[mn]?.avg?.toFixed(0) ?? "—"}, hist avg ${hm[mn]?.avg?.toFixed(0) ?? "—"}`)
+        .join("; ");
+
+      const prompt = `You are a maritime transport analyst for the Philippines. Use this real ferry forecast data:
+
+MONTHLY FORECAST (next 12 months): ${monthStr}
+OIL SCENARIOS: ${scenStr}
+SEASONAL PATTERNS: ${seaStr}
+CONTEXT: MARINA approved a 20% fare hike effective March 16 2026 due to Iran/Hormuz oil shock (+36% Brent).
+
+Respond ONLY in valid JSON — no markdown, no extra text:
+{
+  "peak_surge_period": "short label e.g. Holy Week Apr 2026",
+  "peak_surge_desc": "one sentence explaining the peak",
+  "price_pressure": "HIGH or MODERATE or LOW",
+  "price_pct": "e.g. +15–20%",
+  "price_desc": "one sentence on the 6-month price outlook",
+  "insight": "Two short paragraphs (plain text, no markdown) on surge patterns, ticket price trajectory, and advice for Filipino ferry passengers. Be specific about months and percentages.",
+  "routes": [
+    {"route":"Manila–Cebu","class":"Economy","now":"+20%","outlook_6mo":"+5–8%","risk":"HIGH"},
+    {"route":"Manila–Cebu","class":"Tourist","now":"+20%","outlook_6mo":"+3–5%","risk":"MODERATE"},
+    {"route":"Manila–Davao","class":"Economy","now":"+20%","outlook_6mo":"+5–10%","risk":"HIGH"},
+    {"route":"Cebu–Cagayan de Oro","class":"Economy","now":"+15%","outlook_6mo":"+4–6%","risk":"MODERATE"},
+    {"route":"Manila–Iloilo","class":"Economy","now":"+20%","outlook_6mo":"+3–6%","risk":"MODERATE"},
+    {"route":"Manila–Zamboanga","class":"Economy","now":"+18%","outlook_6mo":"+5–8%","risk":"HIGH"}
+  ]
+}`;
+
+      const res = await fetch(API_AI, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          model: "claude-sonnet-4-20250514",
+          max_tokens: 1000,
+          messages: [{ role: "user", content: prompt }],
+        }),
+      });
+      const raw = await res.json();
+      let txt = (raw.content ?? []).map((b: any) => b.text ?? "").join("");
+      txt = txt.replace(/```json|```/g, "").trim();
+      setResult(JSON.parse(txt));
+    } catch (e: any) {
+      setErr(e.message ?? "Unknown error");
+    } finally {
+      setLoading(false);
+    }
+  }, [fcOnly, scenArr, hm, fm, mns]);
+
+  useEffect(() => { load(); }, [load]);
+
+  const riskPill = (risk: string): React.CSSProperties => {
+    const base: React.CSSProperties = { fontSize: 10, fontWeight: 500, padding: "2px 8px", borderRadius: 99, whiteSpace: "nowrap" };
+    if (risk === "HIGH")     return { ...base, background: RED.bg,   color: RED.txt };
+    if (risk === "MODERATE") return { ...base, background: AMBER.bg, color: AMBER.txt };
+    return                          { ...base, background: GREEN.bg, color: GREEN.txt };
+  };
+
+  return (
+    <>
+      {/* Surge + Price summary cards */}
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 12 }}>
+        <div style={{ background: BLUE[50], borderRadius: 10, padding: "14px 16px" }}>
+          <div style={{ fontSize: 10, color: BLUE[600], textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 6, fontWeight: 500 }}>
+            Peak surge period
+          </div>
+          <div style={{ fontSize: 18, fontWeight: 500, color: "#D85A30", marginBottom: 4 }}>
+            {loading ? "—" : result?.peak_surge_period ?? "—"}
+          </div>
+          <div style={{ fontSize: 11, color: BLUE[600] }}>
+            {loading ? "Analysing…" : result?.peak_surge_desc ?? ""}
+          </div>
+        </div>
+        <div style={{ background: BLUE[50], borderRadius: 10, padding: "14px 16px" }}>
+          <div style={{ fontSize: 10, color: BLUE[600], textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 6, fontWeight: 500 }}>
+            Price pressure
+          </div>
+          <div style={{ fontSize: 18, fontWeight: 500, color: "#E24B4A", marginBottom: 4 }}>
+            {loading ? "—" : result ? `${result.price_pressure} · ${result.price_pct}` : "—"}
+          </div>
+          <div style={{ fontSize: 11, color: BLUE[600] }}>
+            {loading ? "Analysing…" : result?.price_desc ?? ""}
+          </div>
+        </div>
+      </div>
+
+      {/* AI insight panel */}
+      <div style={{ background: "#fff", border: `0.5px solid ${BLUE[200]}`, borderRadius: 14, padding: "1.1rem 1.25rem", marginBottom: 12 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 12 }}>
+          <div style={{
+            width: 8, height: 8, borderRadius: "50%", background: BLUE[400], flexShrink: 0,
+            animation: loading ? "pulse 1.5s infinite" : "none",
+          }} />
+          <div style={{ fontSize: 11, fontWeight: 500, color: BLUE[600], textTransform: "uppercase", letterSpacing: "0.08em" }}>
+            Claude AI · surge & ticket price intelligence
+          </div>
+        </div>
+
+        {loading && (
+          <div style={{ display: "flex", gap: 6, alignItems: "center", height: 48 }}>
+            {[0, 1, 2].map(i => (
+              <div key={i} style={{
+                width: 6, height: 6, borderRadius: "50%", background: BLUE[400],
+                animation: `bounce 1.2s ${i * 0.2}s infinite`,
+              }} />
+            ))}
+          </div>
+        )}
+
+        {err && (
+          <div style={{ fontSize: 12, color: RED.txt }}>{err}</div>
+        )}
+
+        {!loading && result && (
+          <div style={{ fontSize: 13, lineHeight: 1.75, color: BLUE[900], whiteSpace: "pre-line" }}>
+            {result.insight}
+          </div>
+        )}
+      </div>
+
+      {/* Route ticket projections */}
+      {!loading && result?.routes?.length ? (
+        <Card label="Projected ticket price changes by route">
+          <ColHeader cols={[
+            { label: "Route", flex: 1 },
+            { label: "Now",      align: "center", width: 62,  flex: 0 },
+            { label: "6-month",  align: "center", width: 70,  flex: 0 },
+            { label: "Risk",     align: "right",  width: 62,  flex: 0 },
+          ]} />
+          {result.routes.map((r, i) => (
+            <div key={i} style={{ ...ROW, borderBottomColor: BLUE[50] }}>
+              <div style={{ flex: 1 }}>
+                <div style={{ fontSize: 13, fontWeight: 500, color: BLUE[900] }}>{r.route}</div>
+                <div style={{ fontSize: 11, color: BLUE[600], marginTop: 2 }}>{r.class}</div>
+              </div>
+              <div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
+                <span style={{ ...pillStyle(1), minWidth: 58, textAlign: "center" }}>{r.now}</span>
+                <span style={{ ...pillStyle(null), minWidth: 68, textAlign: "center" }}>{r.outlook_6mo}</span>
+                <span style={riskPill(r.risk)}>{r.risk}</span>
+              </div>
+            </div>
+          ))}
+        </Card>
+      ) : null}
+
+      <style>{`
+        @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.3} }
+        @keyframes bounce { 0%,80%,100%{transform:translateY(0);opacity:.4} 40%{transform:translateY(-5px);opacity:1} }
+      `}</style>
+    </>
+  );
+}
+
+// ─── Main component ───────────────────────────────────────────────────────────
 export default function FerryForecastDashboard() {
-  const [tab, setTab] = useState<"monthly" | "yearly" | "seasonal" | "scenarios">("monthly");
-  const [data, setData] = useState<any>(null);
+  const [tab,   setTab]   = useState<Tab>("monthly");
+  const [data,  setData]  = useState<any>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     Promise.all([
-      fetch(API_N).then(r  => { if (!r.ok) throw new Error(`national HTTP ${r.status}`);  return r.json(); }),
-      fetch(API_S).then(r  => { if (!r.ok) throw new Error(`seasonal HTTP ${r.status}`);  return r.json(); }),
+      fetch(API_N ).then(r => { if (!r.ok) throw new Error(`national HTTP ${r.status}`);  return r.json(); }),
+      fetch(API_S ).then(r => { if (!r.ok) throw new Error(`seasonal HTTP ${r.status}`);  return r.json(); }),
       fetch(API_SC).then(r => { if (!r.ok) throw new Error(`scenarios HTTP ${r.status}`); return r.json(); }),
     ])
       .then(([nat, sea, scen]) => setData({ nat, sea, scen }))
       .catch(e => setError(e.message));
   }, []);
 
-  if (error) return <div style={{ padding: "2rem", color: "#A32D2D", fontSize: 13 }}>Failed to load: {error}</div>;
-  if (!data)  return <div style={{ padding: "2rem", color: BLUE[600], fontSize: 13 }}>Loading forecast data…</div>;
+  if (error) return (
+    <div style={{ padding: "2rem", color: RED.txt, fontSize: 13 }}>
+      Failed to load: {error}
+    </div>
+  );
+  if (!data) return (
+    <div style={{ padding: "2rem", color: BLUE[600], fontSize: 13 }}>
+      Loading forecast data…
+    </div>
+  );
 
+  // ── Data processing ──────────────────────────────────────────────────────
   const { nat, sea, scen } = data;
   const mape = String(nat?.mean_mape ?? nat?.mean_mape_pct ?? "—");
 
-  const hist = (nat?.historical ?? []).map((d: any) => ({
+  const hist: DataPoint[] = (nat?.historical ?? []).map((d: any) => ({
     year: +d.year, mn: +d.month_num, month: String(d.month), val: +d.total, isFc: false,
   }));
-  const fcRaw = (nat?.forecast ?? []).map((d: any) => ({
-    year: +d.year, mn: +d.month_num, month: String(d.month), val: +d.predicted, isFc: true, oil_shock: !!d.oil_shock,
+  const fcRaw: DataPoint[] = (nat?.forecast ?? []).map((d: any) => ({
+    year: +d.year, mn: +d.month_num, month: String(d.month), val: +d.predicted,
+    isFc: true, oil_shock: !!d.oil_shock,
   }));
   const all: DataPoint[] = [...hist, ...fcRaw].sort((a, b) =>
     a.year !== b.year ? a.year - b.year : a.mn - b.mn
@@ -138,10 +389,10 @@ export default function FerryForecastDashboard() {
     all[i].mom = p ? (c - p) / p * 100 : null;
   }
 
-  const peak      = Math.max(...all.map(d => d.val), 1);
-  const fcOnly    = all.filter(d => d.isFc);
-  const maxFcVal  = Math.max(...fcOnly.map(d => d.val), 1);
-  const shockPt   = fcOnly.find(d => d.oil_shock);
+  const peak     = Math.max(...all.map(d => d.val), 1);
+  const fcOnly   = all.filter(d => d.isFc);
+  const maxFcVal = Math.max(...fcOnly.map(d => d.val), 1);
+  const shockPt  = fcOnly.find(d => d.oil_shock);
 
   // Yearly
   const yearMap: Record<number, { h: number; f: number; isFc: boolean }> = {};
@@ -150,8 +401,8 @@ export default function FerryForecastDashboard() {
     if (d.isFc) { yearMap[d.year].f += d.val; yearMap[d.year].isFc = true; }
     else          yearMap[d.year].h += d.val;
   });
-  const years     = Object.keys(yearMap).map(Number).sort();
-  const yData     = years.map((y, i) => {
+  const years    = Object.keys(yearMap).map(Number).sort();
+  const yData    = years.map((y, i) => {
     const cur  = yearMap[y].h || yearMap[y].f;
     const prev = i > 0 ? (yearMap[years[i - 1]].h || yearMap[years[i - 1]].f) : null;
     return { year: y, total: cur, yoy: prev ? (cur - prev) / prev * 100 : null, isFc: yearMap[y].isFc };
@@ -162,115 +413,148 @@ export default function FerryForecastDashboard() {
   const y27       = yData.find(y => y.year === 2027);
 
   // Seasonal
-  const seaHist = sea?.historical ?? [];
-  const seaFc   = sea?.forecast   ?? [];
   const hm: Record<number, { month: string; avg: number }> = {};
   const fm: Record<number, { month: string; avg: number }> = {};
-  seaHist.forEach((d: any) => hm[+d.month_num] = { month: d.month, avg: +d.avg });
-  seaFc.forEach((d: any)   => fm[+d.month_num] = { month: d.month, avg: +d.avg });
-  const mns       = [...new Set([...Object.keys(hm), ...Object.keys(fm)].map(Number))].sort((a, b) => a - b);
-  const fcAvgs    = mns.map(mn => fm[mn]?.avg).filter(Boolean) as number[];
-  const fcMean    = fcAvgs.length ? fcAvgs.reduce((a, b) => a + b, 0) / fcAvgs.length : 1;
-  const peakMn    = mns.reduce((best, mn) => (fm[mn]?.avg || 0) > (fm[best]?.avg || 0) ? mn : best, mns[0]);
-  const troughMn  = mns.reduce((best, mn) => (fm[mn]?.avg ?? 999) < (fm[best]?.avg ?? 999) ? mn : best, mns[0]);
+  (sea?.historical ?? []).forEach((d: any) => hm[+d.month_num] = { month: d.month, avg: +d.avg });
+  (sea?.forecast   ?? []).forEach((d: any) => fm[+d.month_num] = { month: d.month, avg: +d.avg });
+  const mns      = [...new Set([...Object.keys(hm), ...Object.keys(fm)].map(Number))].sort((a, b) => a - b);
+  const fcAvgs   = mns.map(mn => fm[mn]?.avg).filter(Boolean) as number[];
+  const fcMean   = fcAvgs.length ? fcAvgs.reduce((a, b) => a + b, 0) / fcAvgs.length : 1;
+  const peakMn   = mns.reduce((best, mn) => (fm[mn]?.avg || 0) > (fm[best]?.avg || 0) ? mn : best, mns[0]);
+  const troughMn = mns.reduce((best, mn) => (fm[mn]?.avg ?? 999) < (fm[best]?.avg ?? 999) ? mn : best, mns[0]);
   const maxSeaPct = Math.max(...mns.map(mn => {
     const h = hm[mn]?.avg, f = fm[mn]?.avg;
     return h && f ? Math.abs((f - h) / h * 100) : 0;
   }), 1);
 
   // Scenarios
-  const scenArr   = Array.isArray(scen) ? scen : Array.isArray(scen?.scenarios) ? scen.scenarios : [];
+  const scenArr: ScenRow[] = Array.isArray(scen)
+    ? scen
+    : Array.isArray(scen?.scenarios) ? scen.scenarios : [];
   const baselineM = scen?.baseline_M || 0;
-  const modRow    = scenArr.find((s: any) => s.scenario === "moderate");
+  const modRow    = scenArr.find(s => s.scenario === "moderate");
 
-  const TABS = [
+  // ── Tab definitions ──────────────────────────────────────────────────────
+  const TABS: { key: Tab; label: string }[] = [
     { key: "monthly",   label: "Monthly"   },
     { key: "yearly",    label: "Yearly"    },
     { key: "seasonal",  label: "Seasonal"  },
     { key: "scenarios", label: "Scenarios" },
-  ] as const;
+    { key: "ai",        label: "AI predictions" },
+  ];
 
-  const rowBase: React.CSSProperties = {
-    display: "flex", alignItems: "center", justifyContent: "space-between",
-    padding: "12px 0", borderBottom: `0.5px solid ${BLUE[50]}`,
-  };
-
+  // ── Render ────────────────────────────────────────────────────────────────
   return (
-    <div style={{ fontFamily: "Inter, -apple-system, BlinkMacSystemFont, sans-serif", padding: "1.5rem 0", maxWidth: 680, color: BLUE[900] }}>
+    <div style={{
+      fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif",
+      padding: "1.5rem 0", maxWidth: 680, color: BLUE[900],
+    }}>
 
       {/* Header */}
       <div style={{ marginBottom: "1.25rem" }}>
-        <div style={{ fontSize: 11, color: BLUE[600], marginBottom: 4, textTransform: "uppercase", letterSpacing: "0.05em" }}>
+        <div style={{ fontSize: 10, color: BLUE[600], marginBottom: 4, textTransform: "uppercase", letterSpacing: "0.08em", fontWeight: 500 }}>
           MARINA · Ferry Intelligence System v5
         </div>
-        <div style={{ fontSize: 20, fontWeight: 500, marginBottom: 4 }}>Ferry passenger forecast</div>
-        <div style={{ fontSize: 12, color: BLUE[400] }}>XGBoost · 597 trees · 33 features · national coverage</div>
+        <div style={{ fontSize: 22, fontWeight: 500, marginBottom: 4, color: BLUE[900] }}>
+          Ferry passenger forecast
+        </div>
+        <div style={{ fontSize: 12, color: BLUE[400] }}>
+          XGBoost · 597 trees · 33 features · national coverage
+        </div>
       </div>
 
       {/* KPIs */}
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 10, marginBottom: "1.5rem" }}>
-        <KPI label="Mean MAPE"     value={mape}                                     sub="avg prediction error" />
-        <KPI label="2026 forecast" value={y26?.yoy != null ? fmt(y26.yoy) : "—"} sub="YoY vs 2025" />
-        <KPI label="2027 forecast" value={y27?.yoy != null ? fmt(y27.yoy) : "—"} sub="YoY vs 2026" />
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 10, marginBottom: "1.25rem" }}>
+        <KPI
+          label="Mean MAPE"
+          value={mape !== "—" ? `${mape}%` : "—"}
+          sub="avg prediction error"
+        />
+        <KPI
+          label="2026 forecast"
+          value={y26?.yoy != null ? fmt(y26.yoy) : "—"}
+          sub="YoY vs 2025"
+          valueColor={y26?.yoy != null ? (y26.yoy > 0 ? GREEN.txt : RED.txt) : undefined}
+        />
+        <KPI
+          label="2027 forecast"
+          value={y27?.yoy != null ? fmt(y27.yoy) : "—"}
+          sub="YoY vs 2026"
+          valueColor={y27?.yoy != null ? (y27.yoy > 0 ? GREEN.txt : RED.txt) : undefined}
+        />
       </div>
 
       {/* Tabs */}
-      <div style={{ display: "flex", gap: 6, marginBottom: "1.25rem", borderBottom: `0.5px solid ${BLUE[100]}`, paddingBottom: 12 }}>
+      <div style={{ display: "flex", gap: 6, marginBottom: "1.25rem", borderBottom: `0.5px solid ${BLUE[100]}`, paddingBottom: 12, flexWrap: "wrap" }}>
         {TABS.map(t => (
-          <button key={t.key} onClick={() => setTab(t.key)} style={{
-            fontSize: 12, fontWeight: 500, padding: "7px 16px", borderRadius: 8,
-            border: `0.5px solid ${BLUE[100]}`,
-            background: tab === t.key ? BLUE[600] : "transparent",
-            color: tab === t.key ? "#fff" : BLUE[600],
-            cursor: "pointer", transition: "all .15s", fontFamily: "inherit",
-          }}>{t.label}</button>
+          <button
+            key={t.key}
+            onClick={() => setTab(t.key)}
+            style={{
+              fontSize: 12, fontWeight: 500, padding: "7px 15px", borderRadius: 8,
+              border: `0.5px solid ${tab === t.key ? BLUE[600] : BLUE[100]}`,
+              background: tab === t.key ? BLUE[600] : "transparent",
+              color:      tab === t.key ? "#fff"    : BLUE[600],
+              cursor: "pointer", transition: "all .15s",
+              fontFamily: "inherit",
+            }}
+          >
+            {t.label}
+          </button>
         ))}
       </div>
 
       {/* ── MONTHLY ── */}
       {tab === "monthly" && (
         <>
-          {shockPt && <Alert warn text={`Oil shock: ${shockPt.month} ${shockPt.year} — Iran/Hormuz modelled as +36% Brent spike. MARINA approved 20% fare hike Mar 16 2026.`} />}
+          {shockPt && (
+            <Alert warn text={`Oil shock: ${shockPt.month} ${shockPt.year} — Iran/Hormuz modelled as +36% Brent spike. MARINA approved 20% fare hike Mar 16 2026.`} />
+          )}
           <Card label="Forecast — predicted passengers & month-over-month change">
             {/* Legend */}
             <div style={{ display: "flex", gap: 16, fontSize: 11, color: BLUE[600], marginBottom: 14, alignItems: "center", flexWrap: "wrap" }}>
               <span style={{ display: "flex", alignItems: "center", gap: 5 }}>
-                <span style={{ width: 8, height: 8, borderRadius: "50%", background: BLUE[400], display: "inline-block" }} /> Volume bar
+                <span style={{ width: 8, height: 8, borderRadius: "50%", background: BLUE[400], display: "inline-block" }} />
+                Volume bar
               </span>
               <span style={{ display: "flex", alignItems: "center", gap: 5 }}>
-                <span style={{ width: 24, height: 8, borderRadius: 3, background: "#EAF3DE", display: "inline-block" }} /> Rising MoM
+                <span style={{ width: 22, height: 8, borderRadius: 3, background: GREEN.bg, display: "inline-block" }} />
+                Rising MoM
               </span>
               <span style={{ display: "flex", alignItems: "center", gap: 5 }}>
-                <span style={{ width: 24, height: 8, borderRadius: 3, background: "#FCEBEB", display: "inline-block" }} /> Falling MoM
+                <span style={{ width: 22, height: 8, borderRadius: 3, background: RED.bg, display: "inline-block" }} />
+                Falling MoM
               </span>
             </div>
+
             <ColHeader cols={[
-              { label: "Month", width: 72 },
-              { label: "Volume", align: "left" },
-              { label: "Predicted", align: "right", width: 80 },
-              { label: "MoM", align: "center", width: 62 },
-              { label: "% Peak", align: "right", width: 44 },
+              { label: "Month",   width: 100, flex: 0 },
+              { label: "Volume",  flex: 1,    align: "left" },
+              { label: "MoM",     width: 62,  align: "center", flex: 0 },
+              { label: "% peak",  width: 48,  align: "right",  flex: 0 },
             ]} />
+
             {fcOnly.map(d => {
               const peakPct = d.val / peak * 100;
               const barW    = d.val / maxFcVal * 100;
               return (
-                <div key={`${d.month}-${d.year}`} style={{ ...rowBase }}>
+                <div key={`${d.month}-${d.year}`} style={{ ...ROW }}>
                   <div style={{ display: "flex", alignItems: "center", gap: 10, flex: 1, minWidth: 0 }}>
-                    <span style={{ fontSize: 13, color: BLUE[900], fontWeight: 500, minWidth: 72, flexShrink: 0 }}>
+                    <span style={{ fontSize: 13, fontWeight: 500, color: BLUE[900], minWidth: 96, flexShrink: 0 }}>
                       {d.month} {d.year}
-                      {d.oil_shock && <span style={{ fontSize: 10, color: "#A32D2D", marginLeft: 4, fontWeight: 500 }}>OIL</span>}
+                      {d.oil_shock && (
+                        <span style={{ fontSize: 9, color: "#A32D2D", marginLeft: 5, fontWeight: 500, verticalAlign: "middle" }}>
+                          OIL
+                        </span>
+                      )}
                     </span>
-                    <div style={{ flex: 1, maxWidth: 120, height: 4, background: BLUE[50], borderRadius: 99, overflow: "hidden" }}>
+                    <div style={{ flex: 1, maxWidth: 110, height: 3, background: BLUE[50], borderRadius: 99, overflow: "hidden" }}>
                       <div style={{ width: `${barW}%`, height: "100%", background: BLUE[400], borderRadius: 99 }} />
                     </div>
                   </div>
                   <div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
-                    <span style={{ fontSize: 12, color: BLUE[600], minWidth: 80, textAlign: "right", fontWeight: 500 }}>
-                      {fmtPax(d.val)}
-                    </span>
                     <span style={pillStyle(d.mom ?? null)}>{fmt(d.mom ?? null)}</span>
-                    <span style={{ fontSize: 13, fontWeight: 500, color: BLUE[900], minWidth: 44, textAlign: "right" }}>
+                    <span style={{ fontSize: 12, fontWeight: 500, color: BLUE[800], minWidth: 44, textAlign: "right" }}>
                       {peakPct.toFixed(1)}%
                     </span>
                   </div>
@@ -285,22 +569,20 @@ export default function FerryForecastDashboard() {
       {tab === "yearly" && (
         <Card label="Year-over-year passenger growth">
           <ColHeader cols={[
-            { label: "Year", width: 140 },
-            { label: "Total predicted", align: "right", width: 110 },
-            { label: "YoY change", align: "right", width: 62 },
+            { label: "Year",       width: 150, flex: 0 },
+            { label: "Trend",      flex: 1 },
+            { label: "YoY change", width: 70,  align: "right", flex: 0 },
           ]} />
           {yFiltered.map(y => (
-            <div key={y.year} style={{ ...rowBase }}>
-              <span style={{ fontSize: 13, color: BLUE[900], fontWeight: 500, minWidth: 140 }}>
-                {y.isFc ? `${y.year} (forecast)` : String(y.year)}
+            <div key={y.year} style={{ ...ROW }}>
+              <span style={{ fontSize: 13, fontWeight: 500, color: BLUE[900], minWidth: 150 }}>
+                {y.isFc ? `${y.year} ` : String(y.year)}
+                {y.isFc && <span style={{ fontSize: 10, color: BLUE[600] }}>(forecast)</span>}
               </span>
-              <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                <span style={{ fontSize: 12, color: BLUE[600], minWidth: 110, textAlign: "right", fontWeight: 500 }}>
-                  {fmtFull(y.total)}
-                </span>
-                <BarTrack pct={Math.abs(y.yoy!) / maxYoy * 100} color={y.yoy! >= 0 ? "#639922" : "#E24B4A"} width={80} />
-                <span style={pillStyle(y.yoy)}>{fmt(y.yoy)}</span>
+              <div style={{ flex: 1, paddingLeft: 8 }}>
+                <BarTrack pct={Math.abs(y.yoy!) / maxYoy * 100} color={y.yoy! >= 0 ? "#639922" : "#E24B4A"} width={90} />
               </div>
+              <span style={pillStyle(y.yoy)}>{fmt(y.yoy)}</span>
             </div>
           ))}
         </Card>
@@ -309,39 +591,46 @@ export default function FerryForecastDashboard() {
       {/* ── SEASONAL ── */}
       {tab === "seasonal" && (
         <>
-          <Alert text={`Peak: ${fm[peakMn]?.month || "—"} · Trough: ${fm[troughMn]?.month || "—"} — shape index vs forecast annual average`} />
+          <Alert text={`Peak: ${fm[peakMn]?.month ?? "—"} · Trough: ${fm[troughMn]?.month ?? "—"} — shape index vs forecast annual average`} />
+
           <Card label="Monthly shape — forecast vs annual average">
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(6, 1fr)", gap: 6, marginBottom: "1rem" }}>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(6, 1fr)", gap: 8, marginBottom: 8 }}>
               {mns.map(mn => {
                 const fc_a  = fm[mn]?.avg;
                 const shape = fc_a != null ? (fc_a - fcMean) / fcMean * 100 : null;
                 return (
-                  <div key={mn} style={{ border: `0.5px solid ${BLUE[100]}`, borderRadius: 8, padding: "10px 4px", textAlign: "center" }}>
-                    <div style={{ fontSize: 11, color: BLUE[600], marginBottom: 5 }}>{fm[mn]?.month || hm[mn]?.month}</div>
-                    <div style={{ fontSize: 13, fontWeight: 500, color: shapeColor(shape) }}>
-                      {shape != null ? `${shape >= 0 ? "+" : ""}${shape.toFixed(1)}%` : "—"}
+                  <div key={mn} style={{ border: `0.5px solid ${BLUE[100]}`, borderRadius: 10, padding: "10px 4px", textAlign: "center" }}>
+                    <div style={{ fontSize: 10, color: BLUE[600], marginBottom: 5 }}>
+                      {fm[mn]?.month ?? hm[mn]?.month}
                     </div>
-                    <div style={{ fontSize: 10, color: BLUE[600], marginTop: 3 }}>{fmtPax(fc_a)}</div>
+                    <div style={{ fontSize: 13, fontWeight: 500, color: shapeColor(shape) }}>
+                      {shape != null ? fmt(shape, 1) : "—"}
+                    </div>
                   </div>
                 );
               })}
             </div>
           </Card>
+
           <Card label="Historical → forecast change by month">
+            <ColHeader cols={[
+              { label: "Month",  flex: 1 },
+              { label: "Trend",  width: 90, flex: 0 },
+              { label: "Change", width: 62, align: "right", flex: 0 },
+            ]} />
             {mns.map(mn => {
-              const h = hm[mn]?.avg, f = fm[mn]?.avg;
+              const h   = hm[mn]?.avg, f = fm[mn]?.avg;
               const pct = h && f ? (f - h) / h * 100 : null;
-              const name = fm[mn]?.month || hm[mn]?.month || String(mn);
+              const name = fm[mn]?.month ?? hm[mn]?.month ?? String(mn);
               return (
-                <div key={mn} style={{ ...rowBase }}>
-                  <span style={{ fontSize: 13, color: BLUE[900], fontWeight: 500 }}>{name}</span>
-                  <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                    <span style={{ fontSize: 12, color: BLUE[600], minWidth: 80, textAlign: "right", fontWeight: 500 }}>
-                      {fmtPax(f ?? null)}
-                    </span>
-                    <BarTrack pct={pct != null ? Math.abs(pct) / maxSeaPct * 100 : 0} color={pct != null && pct >= 0 ? "#639922" : "#E24B4A"} width={80} />
-                    <span style={pillStyle(pct)}>{fmt(pct)}</span>
-                  </div>
+                <div key={mn} style={{ ...ROW }}>
+                  <span style={{ fontSize: 13, fontWeight: 500, color: BLUE[900], flex: 1 }}>{name}</span>
+                  <BarTrack
+                    pct={pct != null ? Math.abs(pct) / maxSeaPct * 100 : 0}
+                    color={pct != null && pct >= 0 ? "#639922" : "#E24B4A"}
+                    width={90}
+                  />
+                  <span style={{ ...pillStyle(pct), marginLeft: 8 }}>{fmt(pct)}</span>
                 </div>
               );
             })}
@@ -353,33 +642,36 @@ export default function FerryForecastDashboard() {
       {tab === "scenarios" && (
         <>
           {modRow && (
-            <Alert warn text={`Active: Iran/Hormuz shock (+36% Brent). MARINA fare hike Mar 2026 validates moderate scenario. Demand impact: ${modRow.demand_change_pct >= 0 ? "+" : ""}${(+modRow.demand_change_pct).toFixed(1)}%`} />
+            <Alert
+              warn
+              text={`Active: Iran/Hormuz shock (+36% Brent). MARINA fare hike Mar 2026 validates moderate scenario. Demand impact: ${modRow.demand_change_pct >= 0 ? "+" : ""}${(+modRow.demand_change_pct).toFixed(1)}%`}
+            />
           )}
           <div style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: 10 }}>
-            {scenArr.map((s: any) => {
-              const key     = String(s.scenario || "").toLowerCase();
+            {scenArr.map(s => {
+              const key     = String(s.scenario ?? "").toLowerCase();
               const dPct    = +s.demand_change_pct || 0;
               const diesel  = +s.diesel_php || 0;
               const adjM    = +s.adjusted_M || 0;
               const diffPct = baselineM && key !== "baseline" ? (adjM - baselineM) / baselineM * 100 : null;
-              const col     = SCENARIO_COLOR[key] || BLUE[400];
+              const col     = SCENARIO_COLOR[key] ?? BLUE[400];
               return (
-                <div key={key} style={{ border: `0.5px solid ${BLUE[100]}`, borderRadius: 12, padding: 16, background: "#fff" }}>
-                  <div style={{ fontSize: 11, color: BLUE[600], textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 8 }}>
-                    {SCENARIO_LABEL[key] || key}
+                <div key={key} style={{ border: `0.5px solid ${BLUE[100]}`, borderRadius: 14, padding: 16, background: "#fff" }}>
+                  <div style={{ height: 3, borderRadius: 99, background: col, marginBottom: 12 }} />
+                  <div style={{ fontSize: 10, color: BLUE[600], textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 8, fontWeight: 500 }}>
+                    {SCENARIO_LABEL[key] ?? key}
                   </div>
                   <div style={{ fontSize: 26, fontWeight: 500, color: col, marginBottom: 4 }}>
                     {dPct >= 0 ? "+" : ""}{dPct.toFixed(1)}%
                   </div>
-                  <div style={{ fontSize: 13, fontWeight: 500, color: BLUE[900], marginBottom: 4 }}>
-                    {fmtFull(adjM)}
-                    <span style={{ fontSize: 11, color: BLUE[600], marginLeft: 4 }}>passengers</span>
-                  </div>
                   <div style={{ fontSize: 12, color: BLUE[600] }}>
-                    {key === "baseline" ? "reference level" : fmt(diffPct) + " vs baseline"}
+                    {key === "baseline" ? "reference level" : `${fmt(diffPct)} vs baseline`}
                   </div>
                   {diesel > 0 && (
-                    <div style={{ marginTop: 10, display: "inline-block", padding: "5px 10px", background: BLUE[50], borderRadius: 6, fontSize: 12, color: BLUE[800] }}>
+                    <div style={{
+                      marginTop: 10, display: "inline-block", padding: "4px 10px",
+                      background: BLUE[50], borderRadius: 6, fontSize: 11, color: BLUE[800],
+                    }}>
                       Diesel ₱{diesel.toFixed(0)}/L
                     </div>
                   )}
@@ -388,6 +680,17 @@ export default function FerryForecastDashboard() {
             })}
           </div>
         </>
+      )}
+
+      {/* ── AI PREDICTIONS ── */}
+      {tab === "ai" && (
+        <AiPredictionsTab
+          fcOnly={fcOnly}
+          scenArr={scenArr}
+          hm={hm}
+          fm={fm}
+          mns={mns}
+        />
       )}
     </div>
   );
