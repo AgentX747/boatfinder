@@ -7,8 +7,6 @@ import * as userService from "../services/userservice.js";
 import { hashPassword, verifyPassword } from "../lib/passwordhash.js";
 import * as onlineService from "../services/onlinepaymentservice.js";
 import { searchrouteandtime } from '../services/userservice.js';
-import { parse } from 'path';
-import { on } from 'events';
 
 export async function searchBoatsController(req: Request, res: Response) {
   try {
@@ -18,10 +16,9 @@ export async function searchBoatsController(req: Request, res: Response) {
       return res.status(401).json({ message: "User not authenticated" });
     }
 
-    // ── Track search interaction ──────────────────────────────────────────
-    // boatId 0 = route-only search (no specific boat targeted yet)
     const { sub } = user;
     const routeQuery = [req.query.routeFrom, req.query.routeTo].filter(Boolean).join(" → ");
+    // Route-only search: boatId=0 is intentionally skipped inside trackInteraction
     if (routeQuery) {
       userService.trackInteraction(Number(sub), 0, "search", routeQuery).catch(() => {});
     }
@@ -55,10 +52,9 @@ export async function getRecommendedBoatsController(req: Request, res: Response)
   }
 }
 
-// ── NEW: weighted recommendations (uses clicks + searches + bookings) ─────────
 export async function getRecommendedBoatsWeightedController(req: Request, res: Response) {
   try {
-    const user = req.user as AuthPayload;
+    const user  = req.user as AuthPayload;
     const limit = Math.min(Number(req.query.limit ?? 6), 20);
     const boats = await userService.getRecommendedBoatsWeighted(String(user.sub), limit);
     res.json(boats);
@@ -68,7 +64,6 @@ export async function getRecommendedBoatsWeightedController(req: Request, res: R
   }
 }
 
-// ── NEW: record a single user interaction (click / search / book) ─────────────
 export async function trackInteractionController(req: Request, res: Response) {
   try {
     const user = req.user as AuthPayload;
@@ -96,7 +91,6 @@ export async function bookBoatdetailsController(req: Request, res: Response) {
   try {
     const boatID = String(req.params.boatID);
 
-    // ── Track click interaction when user opens the booking page ─────────
     const user = req.user as AuthPayload;
     if (user?.sub) {
       userService.trackInteraction(Number(user.sub), Number(boatID), "click").catch(() => {});
@@ -116,21 +110,22 @@ export async function bookBoatdetailsController(req: Request, res: Response) {
 }
 
 export async function physicalbookBoatController(req: Request, res: Response) {
-  const { tripDate } = req.body
+  const { tripDate } = req.body;
   try {
     if (!tripDate) {
       return res.status(400).json({ message: 'trip date is required' });
     }
 
+    // BUG FIX: sub is the logged-in USER's id — use it as userId, NOT boatId.
+    // The boatId lives in req.body and is already extracted inside physicalbookTransaction.
     const { sub, role } = req.user as AuthPayload;
-    const boatId = parseInt(sub);
+    const userId = parseInt(sub);  // ← was: const boatId = parseInt(sub) ← WRONG
 
-    const result = await userService.physicalbookTransaction(boatId, req.body, role);
-    // Note: trackInteraction('book') is already called inside physicalbookTransaction
+    const result = await userService.physicalbookTransaction(userId, req.body, role);
 
     return res.json({
       message: 'Booking created successfully',
-      ...result
+      ...result,
     });
   } catch (err: any) {
     console.error('Error in physical booking:', err);
@@ -211,13 +206,13 @@ export async function cancelPendingBookingController(req: Request, res: Response
 
     return res.json({
       message: 'Booking cancelled successfully',
-      ...result
+      ...result,
     });
 
   } catch (err: any) {
     console.error('Error declining pending booking:', err);
     return res.status(err.status || 500).json({
-      message: err.message || 'Internal server error'
+      message: err.message || 'Internal server error',
     });
   }
 }
@@ -250,7 +245,7 @@ export async function getCurrentUserDetailsCotroller(req: Request, res: Response
 
 export async function confirmEditUserController(req: Request, res: Response) {
   const { firstName, lastName, userName, email, password, confirmPassword,
-    phone_number, address, gender, birthdate } = req.body
+    phone_number, address, gender, birthdate } = req.body;
 
   if (!firstName || !lastName || !userName || !email || !phone_number || !address || !gender || !birthdate) {
     return res.status(400).json({ message: "All fields are required" });
@@ -272,7 +267,7 @@ export async function confirmEditUserController(req: Request, res: Response) {
       firstName, lastName, userName, email,
       password: password || null,
       phone_number, address, gender, birthdate,
-      userId: parseInt(sub)
+      userId: parseInt(sub),
     });
     return res.json(result);
   } catch (error: any) {
@@ -293,7 +288,7 @@ export async function submitTicketController(req: Request, res: Response) {
 
     return res.json({
       message: "Ticket submitted successfully",
-      data: result
+      data: result,
     });
 
   } catch (error) {
@@ -325,23 +320,24 @@ export async function getOnlineTripDetailsController(req: Request, res: Response
 }
 
 export async function onlinebookBoatController(req: Request, res: Response) {
-  const { tripDate } = req.body
+  const { tripDate } = req.body;
   try {
     if (!tripDate) {
       return res.status(400).json({ message: 'trip date is required' });
     }
 
+    // BUG FIX: same issue as physicalbookBoatController — sub = userId, not boatId
     const { sub, role } = req.user as AuthPayload;
-    const boatId = parseInt(sub);
+    const userId = parseInt(sub);  // ← was: const boatId = parseInt(sub) ← WRONG
 
-    const result = await onlineService.confirmOnlinePayment(boatId, req.body, role);
+    const result = await onlineService.confirmOnlinePayment(userId, req.body, role);
 
     return res.json({
       message: 'Booking created successfully',
-      ...result
+      ...result,
     });
   } catch (err: any) {
-    console.error('Error in physical booking:', err);
+    console.error('Error in online booking:', err);
     return res.status(500).json({ message: err.message || 'Internal server error' });
   }
 }
@@ -398,11 +394,11 @@ export async function getRefundTicketCardsController(req: Request, res: Response
 
 export async function getSupportTicketCardsController(req: Request, res: Response) {
   try {
-    const { sub } = req.user as AuthPayload
+    const { sub } = req.user as AuthPayload;
 
-    const tickets = await userService.getSupportTickets(Number(sub))
+    const tickets = await userService.getSupportTickets(Number(sub));
 
-    res.status(200).json(tickets)
+    res.status(200).json(tickets);
 
   } catch (error) {
     res.status(500).json({ message: "Failed to fetch support tickets" });

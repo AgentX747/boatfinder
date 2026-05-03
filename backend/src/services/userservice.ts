@@ -1,28 +1,3 @@
-// ─── Improved Collaborative Filtering ────────────────────────────────────────
-//
-// Key changes vs the original:
-//
-//  1. No longer excludes boats the user has already interacted with.
-//     Clicking a boat no longer makes it disappear from recommendations.
-//
-//  2. Uses a SOFT PENALTY instead of a hard exclusion:
-//     A boat you've already interacted with gets its CF score multiplied by
-//     a penalty factor (0.0–1.0). This keeps it visible but de-prioritises it
-//     compared to truly new suggestions.
-//
-//  3. Interaction scores use TIME DECAY: older interactions are worth less.
-//     This makes recommendations feel fresher over time.
-//
-//  4. Popularity fallback is now FILTERED to exclude boats the user already
-//     BOOKED (not just clicked), so truly seen content isn't re-promoted.
-//
-//  5. The scoring formula is now:
-//        raw_cf_score × similarity × recency_weight × repeat_penalty
-//     where repeat_penalty = ALREADY_SEEN_PENALTY if user interacted, else 1.0
-//     and   ALREADY_SEEN_PENALTY = 0.35  (tweak freely)
-//
-// ─────────────────────────────────────────────────────────────────────────────
-
 import { connection } from "../config/mysql.js";
 import { RowDataPacket } from "mysql2";
 import { invalidateCache, withCache } from "../utils/cache.js";
@@ -35,19 +10,12 @@ const BOATS_TTL   = 300;
 const BOOKING_TTL = 60;
 const HISTORY_TTL = 120;
 const PROFILE_TTL = 300;
+// Shared matrix cache — avoids full table scan on every recommendation request
+const MATRIX_TTL  = 120;
 
-/** Boats the user has interacted with (click/search) are still shown,
- *  but their CF score is multiplied by this factor to naturally push
- *  fresh recommendations higher. Set to 0 to hide them entirely. */
 const REPEAT_INTERACTION_PENALTY = 0.35;
-
-/** Boats the user has BOOKED are considered truly "done" — apply a
- *  heavier penalty so they sink to the bottom of the list. */
-const BOOKED_PENALTY = 0.10;
-
-/** Half-life for time decay in days. An interaction 30 days ago is worth
- *  about half of one that happened today. */
-const DECAY_HALF_LIFE_DAYS = 30;
+const BOOKED_PENALTY             = 0.10;
+const DECAY_HALF_LIFE_DAYS       = 30;
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 export type InteractionType = "book" | "click" | "search";
@@ -73,7 +41,6 @@ interface ScoredBoatRow extends BoatRow {
   score: number;
 }
 
-// ─── Base interaction weights (BEFORE time decay) ─────────────────────────────
 const INTERACTION_WEIGHTS: Record<InteractionType, number> = {
   book:   3.0,
   click:  1.0,
@@ -114,7 +81,6 @@ function cosineSimilarity(
 }
 
 // ─── Time decay ───────────────────────────────────────────────────────────────
-/** Returns a weight in (0, 1] — 1.0 for right now, decaying exponentially. */
 function decayWeight(createdAt: Date | string | null): number {
   if (!createdAt) return 1.0;
   const ageMs   = Date.now() - new Date(createdAt).getTime();
@@ -145,79 +111,82 @@ export async function getAllBoats(): Promise<BoatRow[]> {
 }
 
 // ─── Track interaction ────────────────────────────────────────────────────────
+// FIX: Skip boatId === 0 (route-only searches) so junk rows don't pollute the matrix
 export async function trackInteraction(
-  userId:     number,
-  boatId:     number,
-  type:       InteractionType,
+  userId:      number,
+  boatId:      number,
+  type:        InteractionType,
   routeQuery?: string
 ): Promise<void> {
+  if (!boatId || boatId === 0) return;
+
   try {
     await connection.execute(
       `INSERT INTO user_interactions (user_id, boat_id, interaction_type, route_query)
        VALUES (?, ?, ?, ?)`,
       [userId, boatId, type, routeQuery ?? null]
     );
-    await invalidateCache(`interactions:weighted:${userId}`);
+    // Invalidate both per-user cache AND shared matrix cache
+    await invalidateCache(
+      `interactions:weighted:${userId}`,
+      `cf:matrix:all`,
+      `user:booked:${userId}`
+    );
   } catch (err) {
     console.error("[trackInteraction] non-fatal:", err);
   }
 }
 
-// ─── Build weighted + time-decayed user-boat matrix ───────────────────────────
+// ─── Build global user-boat matrix (CACHED) ───────────────────────────────────
 //
-// Returns:
-//   matrix        — weighted scores for CF (used for cosine similarity)
-//   bookedByUser  — Set of boat IDs the user has explicitly BOOKED
-//   interactedByUser — Set of boat IDs the user has clicked/searched/booked
+// BUG FIX: The old version ran a full table scan with NO caching on every single
+// recommendation request. This now caches the entire matrix for MATRIX_TTL seconds,
+// shared across all users. Invalidated whenever any booking or interaction is recorded.
 //
-async function buildDecayedMatrix(currentUserId: string): Promise<{
-  matrix:            UserBoatMatrix;
-  bookedByUser:      Set<string>;
-  interactedByUser:  Set<string>;
+async function buildDecayedMatrix(): Promise<{
+  matrix:        UserBoatMatrix;
+  popularityMap: Record<string, number>;
 }> {
-  // 1. Bookings (heavier weight, no timestamp decay — bookings are definitive)
-  const [bookingRows] = await connection.execute<RowDataPacket[]>(
-    `SELECT fk_booking_userId AS user_id, fk_booking_boatId AS boat_id
-     FROM bookings
-     WHERE bookingstatus IN ('completed','accepted')`
-  );
+  return withCache("cf:matrix:all", MATRIX_TTL, async () => {
+    const matrix:        UserBoatMatrix          = {};
+    const popularityMap: Record<string, number>  = {};
 
-  const matrix: UserBoatMatrix = {};
-  const bookedByUser     = new Set<string>();
-  const interactedByUser = new Set<string>();
+    // 1. Completed/accepted bookings — strongest signal, no decay
+    const [bookingRows] = await connection.execute<RowDataPacket[]>(
+      `SELECT fk_booking_userId AS user_id, fk_booking_boatId AS boat_id
+       FROM bookings
+       WHERE bookingstatus IN ('completed', 'accepted')
+         AND fk_booking_boatId IS NOT NULL
+         AND fk_booking_boatId > 0`
+    );
 
-  for (const row of bookingRows) {
-    const uid = String(row.user_id);
-    const bid = String(row.boat_id);
-    if (!matrix[uid]) matrix[uid] = {};
-    matrix[uid][bid] = (matrix[uid][bid] ?? 0) + INTERACTION_WEIGHTS.book;
-    if (uid === currentUserId) {
-      bookedByUser.add(bid);
-      interactedByUser.add(bid);
+    for (const row of bookingRows) {
+      const uid = String(row.user_id);
+      const bid = String(row.boat_id);
+      if (!matrix[uid]) matrix[uid] = {};
+      matrix[uid][bid] = (matrix[uid][bid] ?? 0) + INTERACTION_WEIGHTS.book;
+      popularityMap[bid] = (popularityMap[bid] ?? 0) + INTERACTION_WEIGHTS.book;
     }
-  }
 
-  // 2. Interactions (clicks, searches, books) — apply time decay
-  const [interactionRows] = await connection.execute<RowDataPacket[]>(
-    `SELECT user_id, boat_id, interaction_type, created_at
-     FROM user_interactions`
-  );
+    // 2. Clicks / searches — lighter signal, apply time decay
+    const [interactionRows] = await connection.execute<RowDataPacket[]>(
+      `SELECT user_id, boat_id, interaction_type, created_at
+       FROM user_interactions
+       WHERE boat_id IS NOT NULL AND boat_id > 0`
+    );
 
-  for (const row of interactionRows) {
-    const uid    = String(row.user_id);
-    const bid    = String(row.boat_id);
-    const base   = INTERACTION_WEIGHTS[row.interaction_type as InteractionType] ?? 0;
-    const weight = base * decayWeight(row.created_at);
-
-    if (!matrix[uid]) matrix[uid] = {};
-    matrix[uid][bid] = (matrix[uid][bid] ?? 0) + weight;
-
-    if (uid === currentUserId) {
-      interactedByUser.add(bid);
+    for (const row of interactionRows) {
+      const uid    = String(row.user_id);
+      const bid    = String(row.boat_id);
+      const base   = INTERACTION_WEIGHTS[row.interaction_type as InteractionType] ?? 0;
+      const weight = base * decayWeight(row.created_at);
+      if (!matrix[uid]) matrix[uid] = {};
+      matrix[uid][bid]   = (matrix[uid][bid]   ?? 0) + weight;
+      popularityMap[bid] = (popularityMap[bid]  ?? 0) + weight;
     }
-  }
 
-  return { matrix, bookedByUser, interactedByUser };
+    return { matrix, popularityMap };
+  });
 }
 
 // ─── Weighted + decay CF recommendations ─────────────────────────────────────
@@ -225,57 +194,68 @@ export async function getRecommendedBoatsWeighted(
   userId: string,
   limit  = 6
 ): Promise<BoatRow[]> {
-  const [{ matrix, bookedByUser, interactedByUser }, allBoats] =
-    await Promise.all([buildDecayedMatrix(userId), getAllBoats()]);
 
-  const currentVec = matrix[userId] ?? {};
-  const hasHistory = Object.keys(currentVec).length > 0;
+  const [{ matrix, popularityMap }, allBoats, bookedBoatIds] = await Promise.all([
+    buildDecayedMatrix(),
+    getAllBoats(),
+    // Per-user booked set — needed to apply heavier penalty accurately
+    withCache(`user:booked:${userId}`, BOOKING_TTL, async () => {
+      const [rows] = await connection.execute<RowDataPacket[]>(
+        `SELECT DISTINCT fk_booking_boatId AS boat_id
+         FROM bookings
+         WHERE fk_booking_userId = ?
+           AND bookingstatus IN ('completed', 'accepted', 'pending')
+           AND fk_booking_boatId IS NOT NULL`,
+        [userId]
+      );
+      return new Set<string>(rows.map(r => String(r.boat_id)));
+    }),
+  ]);
 
-  // ── Popularity map (sum of all weighted interactions per boat) ───────────
-  const popularityMap: Record<string, number> = {};
-  for (const uid in matrix) {
-    for (const bid in matrix[uid]) {
-      popularityMap[bid] = (popularityMap[bid] ?? 0) + matrix[uid][bid];
-    }
-  }
-
-  // ── Cold start: no history → sorted by popularity ────────────────────────
-  if (!hasHistory) {
-    return (allBoats as BoatRow[])
-      .map(b => ({ ...b, bookingCount: popularityMap[String(b.boat_id)] ?? 0 }))
-      .sort((a, b) => (b.bookingCount ?? 0) - (a.bookingCount ?? 0))
-      .slice(0, limit);
-  }
-
-  // ── CF scoring (user-based) ───────────────────────────────────────────────
-  const boatScore: Record<string, number> = {};
-
-  for (const otherUid in matrix) {
-    if (otherUid === userId) continue;
-
-    const sim = cosineSimilarity(currentVec, matrix[otherUid]);
-    if (sim <= 0) continue;
-
-    for (const bid in matrix[otherUid]) {
-      // Accumulate raw CF score regardless of prior interaction
-      boatScore[bid] = (boatScore[bid] ?? 0) + sim * matrix[otherUid][bid];
-    }
-  }
-
-  // ── Apply soft penalties ──────────────────────────────────────────────────
-  // Boats already booked    → heavy penalty (sink to bottom)
-  // Boats only clicked/seen → light penalty (still visible, just lower)
-  const penaltyFor = (bid: string): number => {
-    if (bookedByUser.has(bid))    return BOOKED_PENALTY;
-    if (interactedByUser.has(bid)) return REPEAT_INTERACTION_PENALTY;
-    return 1.0;
-  };
+  const currentVec       = matrix[userId] ?? {};
+  const interactedByUser = new Set(Object.keys(currentVec));
+  const hasHistory       = interactedByUser.size > 0;
 
   const boatMap = new Map<string, BoatRow>(
     (allBoats as BoatRow[]).map(b => [String(b.boat_id), b])
   );
 
-  // Score ALL boats (not just unseen ones)
+  // ── Cold start: no history → sorted by global popularity ─────────────────
+  if (!hasHistory) {
+    return (allBoats as BoatRow[])
+      .map(b => ({ ...b, score: popularityMap[String(b.boat_id)] ?? 0 }))
+      .sort((a, b) => (b.score ?? 0) - (a.score ?? 0))
+      .slice(0, limit);
+  }
+
+  // ── CF scoring ────────────────────────────────────────────────────────────
+  const boatScore: Record<string, number> = {};
+
+  for (const otherUid in matrix) {
+    if (otherUid === userId) continue;
+    const sim = cosineSimilarity(currentVec, matrix[otherUid]);
+    if (sim <= 0) continue;
+    for (const bid in matrix[otherUid]) {
+      boatScore[bid] = (boatScore[bid] ?? 0) + sim * matrix[otherUid][bid];
+    }
+  }
+
+  // ── No CF neighbours yet → fall back to popularity (excluding booked) ────
+  if (Object.keys(boatScore).length === 0) {
+    return (allBoats as BoatRow[])
+      .filter(b => !(bookedBoatIds as Set<string>).has(String(b.boat_id)))
+      .map(b => ({ ...b, score: popularityMap[String(b.boat_id)] ?? 0 }))
+      .sort((a, b) => (b.score ?? 0) - (a.score ?? 0))
+      .slice(0, limit);
+  }
+
+  // ── Apply soft penalties ──────────────────────────────────────────────────
+  const penaltyFor = (bid: string): number => {
+    if ((bookedBoatIds as Set<string>).has(bid)) return BOOKED_PENALTY;
+    if (interactedByUser.has(bid))               return REPEAT_INTERACTION_PENALTY;
+    return 1.0;
+  };
+
   const scored: ScoredBoatRow[] = Object.entries(boatScore)
     .map(([bid, rawScore]): ScoredBoatRow | undefined => {
       const boat = boatMap.get(bid);
@@ -286,23 +266,24 @@ export async function getRecommendedBoatsWeighted(
     .sort((a, b) => b.score - a.score)
     .slice(0, limit);
 
-  // ── Popularity fallback if CF didn't fill the list ────────────────────────
-  // Only exclude boats the user has BOOKED (not just clicked)
+  // ── Popularity fill if CF list is short ───────────────────────────────────
   if (scored.length < limit) {
     const scoredIds = new Set(scored.map(b => String(b.boat_id)));
     const popular = (allBoats as BoatRow[])
-      .filter(b => !scoredIds.has(String(b.boat_id)) && !bookedByUser.has(String(b.boat_id)))
-      .map(b => ({ ...b, bookingCount: popularityMap[String(b.boat_id)] ?? 0 }))
-      .sort((a, b) => (b.bookingCount ?? 0) - (a.bookingCount ?? 0))
+      .filter(b => {
+        const bid = String(b.boat_id);
+        return !scoredIds.has(bid) && !(bookedBoatIds as Set<string>).has(bid);
+      })
+      .map(b => ({ ...b, score: popularityMap[String(b.boat_id)] ?? 0 }))
+      .sort((a, b) => (b.score ?? 0) - (a.score ?? 0))
       .slice(0, limit - scored.length);
-
     return [...scored, ...popular];
   }
 
   return scored;
 }
 
-// ─── Legacy CF (booking-only, unchanged) ─────────────────────────────────────
+// ─── Legacy CF (booking-only, kept for backwards compat) ─────────────────────
 async function buildUserBoatMatrix(): Promise<UserBoatMatrix> {
   const [rows] = await connection.execute<RowDataPacket[]>(
     `SELECT fk_booking_userId AS user_id, fk_booking_boatId AS boat_id
@@ -369,7 +350,7 @@ export async function getRecommendedBoats(userId: string, limit = 6): Promise<Bo
   return scored;
 }
 
-// ─── All remaining service functions (unchanged) ──────────────────────────────
+// ─── Remaining service functions (unchanged) ──────────────────────────────────
 
 export async function searchrouteandtime(query: any = {}) {
   const routeFrom     = query.routeFrom     ?? null;
@@ -439,7 +420,7 @@ export async function bookBoatdetails(boatID: string) {
 }
 
 export async function physicalbookTransaction(
-  userID:    number,
+  userId:    number,
   body:      any,
   userRole:  string | null = null,
   userAgent: string | null = null
@@ -460,7 +441,7 @@ export async function physicalbookTransaction(
            schedules, payment_method, bookingstatus, boatstatus, total_price
          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
-          ticketCode || null, userID || null, boatId || null,
+          ticketCode || null, userId || null, boatId || null,
           operatorId || null, companyId || null, boatName || null,
           new Date().toISOString().slice(0, 19).replace("T", " "),
           tripDate || null, routeFrom || null, routeTo || null,
@@ -474,25 +455,27 @@ export async function physicalbookTransaction(
         `INSERT INTO payments (payment_method, user_id, booking_id, amount, status, created_at)
          VALUES (?, ?, ?, ?, ?, ?)`,
         [
-          "physical", String(userID), String(bookingId),
+          "physical", String(userId), String(bookingId),
           Number(ticketPrice) || 0, "pending",
           new Date().toISOString().slice(0, 19).replace("T", " "),
         ]
       );
 
       await invalidateCache(
-        `bookings:pending:${userID}`,
-        `bookings:history:${userID}`,
+        `bookings:pending:${userId}`,
+        `bookings:history:${userId}`,
+        `user:booked:${userId}`,
+        `cf:matrix:all`,
         `operator:bookings:pending:${operatorId}`,
         `operator:bookings:history:${operatorId}`
       );
 
-      await trackInteraction(userID, Number(boatId), "book");
-      await insertLog("BOOK_TICKET", userID, userRole, userAgent);
+      await trackInteraction(userId, Number(boatId), "book");
+      await insertLog("BOOK_TICKET", userId, userRole, userAgent);
       return { bookingId, ticketCode };
     } catch (err: any) {
       if (err.code !== "ER_DUP_ENTRY") {
-        await insertLog("BOOK_TICKET_FAILED", userID, userRole, userAgent);
+        await insertLog("BOOK_TICKET_FAILED", userId, userRole, userAgent);
         throw err;
       }
     }

@@ -35,7 +35,7 @@ const RED   = { bg: "#FCEBEB", txt: "#791F1F" };
 const AMBER = { bg: "#FAEEDA", txt: "#633806" };
 
 // ─── Types ────────────────────────────────────────────────────────────────────
-type Tab = "monthly" | "yearly" | "seasonal" | "scenarios" | "ai";
+type Tab = "monthly" | "yearly" | "seasonal" | "scenarios";
 
 type DataPoint = {
   year: number;
@@ -52,24 +52,6 @@ type ScenRow = {
   demand_change_pct: number;
   diesel_php: number;
   adjusted_M: number;
-};
-
-type AiRoute = {
-  route: string;
-  class: string;
-  now: string;
-  outlook_6mo: string;
-  risk: "HIGH" | "MODERATE" | "LOW";
-};
-
-type AiResult = {
-  peak_surge_period: string;
-  peak_surge_desc:   string;
-  price_pressure:    string;
-  price_pct:         string;
-  price_desc:        string;
-  insight:           string;
-  routes:            AiRoute[];
 };
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -166,59 +148,18 @@ const ROW: React.CSSProperties = {
   padding: "10px 0", borderBottom: `0.5px solid ${BLUE[50]}`,
 };
 
-// ─── AI Predictions tab ───────────────────────────────────────────────────────
-function AiPredictionsTab({
-  fcOnly, scenArr, hm, fm, mns,
-}: {
-  fcOnly: DataPoint[];
-  scenArr: ScenRow[];
-  hm: Record<number, { month: string; avg: number }>;
-  fm: Record<number, { month: string; avg: number }>;
-  mns: number[];
-}) {
-  const [result, setResult]   = useState<AiResult | null>(null);
+// ─── AI Insight Panel ─────────────────────────────────────────────────────────
+function AiInsightPanel({ prompt, cacheKey }: { prompt: string; cacheKey: string }) {
+  const [text, setText]       = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [err, setErr]         = useState<string | null>(null);
+  const [open, setOpen]       = useState(false);
 
   const load = useCallback(async () => {
+    if (text || loading) return;
     setLoading(true);
     setErr(null);
     try {
-      const monthStr = fcOnly.slice(0, 12)
-        .map(d => `${d.month} ${d.year}: MoM=${d.mom != null ? d.mom.toFixed(1) + "%" : "—"}${d.oil_shock ? " [OIL SHOCK]" : ""}`)
-        .join(", ");
-      const scenStr = scenArr
-        .map(s => `${s.scenario}: demand ${s.demand_change_pct >= 0 ? "+" : ""}${(+s.demand_change_pct).toFixed(1)}%, diesel ₱${(+s.diesel_php).toFixed(0)}/L`)
-        .join("; ");
-      const seaStr = mns
-        .map(mn => `${fm[mn]?.month ?? mn}: forecast avg ${fm[mn]?.avg?.toFixed(0) ?? "—"}, hist avg ${hm[mn]?.avg?.toFixed(0) ?? "—"}`)
-        .join("; ");
-
-      const prompt = `You are a maritime transport analyst for the Philippines. Use this real ferry forecast data:
-
-MONTHLY FORECAST (next 12 months): ${monthStr}
-OIL SCENARIOS: ${scenStr}
-SEASONAL PATTERNS: ${seaStr}
-CONTEXT: MARINA approved a 20% fare hike effective March 16 2026 due to Iran/Hormuz oil shock (+36% Brent).
-
-Respond ONLY in valid JSON — no markdown, no extra text:
-{
-  "peak_surge_period": "short label e.g. Holy Week Apr 2026",
-  "peak_surge_desc": "one sentence explaining the peak",
-  "price_pressure": "HIGH or MODERATE or LOW",
-  "price_pct": "e.g. +15–20%",
-  "price_desc": "one sentence on the 6-month price outlook",
-  "insight": "Two short paragraphs (plain text, no markdown) on surge patterns, ticket price trajectory, and advice for Filipino ferry passengers. Be specific about months and percentages.",
-  "routes": [
-    {"route":"Manila–Cebu","class":"Economy","now":"+20%","outlook_6mo":"+5–8%","risk":"HIGH"},
-    {"route":"Manila–Cebu","class":"Tourist","now":"+20%","outlook_6mo":"+3–5%","risk":"MODERATE"},
-    {"route":"Manila–Davao","class":"Economy","now":"+20%","outlook_6mo":"+5–10%","risk":"HIGH"},
-    {"route":"Cebu–Cagayan de Oro","class":"Economy","now":"+15%","outlook_6mo":"+4–6%","risk":"MODERATE"},
-    {"route":"Manila–Iloilo","class":"Economy","now":"+20%","outlook_6mo":"+3–6%","risk":"MODERATE"},
-    {"route":"Manila–Zamboanga","class":"Economy","now":"+18%","outlook_6mo":"+5–8%","risk":"HIGH"}
-  ]
-}`;
-
       const res = await fetch(API_AI, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -229,117 +170,77 @@ Respond ONLY in valid JSON — no markdown, no extra text:
         }),
       });
       const raw = await res.json();
-      let txt = (raw.content ?? []).map((b: any) => b.text ?? "").join("");
-      txt = txt.replace(/```json|```/g, "").trim();
-      setResult(JSON.parse(txt));
+      const out = (raw.content ?? []).map((b: any) => b.text ?? "").join("").trim();
+      setText(out);
     } catch (e: any) {
       setErr(e.message ?? "Unknown error");
     } finally {
       setLoading(false);
     }
-  }, [fcOnly, scenArr, hm, fm, mns]);
+  }, [prompt, text, loading]);
 
-  useEffect(() => { load(); }, [load]);
-
-  const riskPill = (risk: string): React.CSSProperties => {
-    const base: React.CSSProperties = { fontSize: 10, fontWeight: 500, padding: "2px 8px", borderRadius: 99, whiteSpace: "nowrap" };
-    if (risk === "HIGH")     return { ...base, background: RED.bg,   color: RED.txt };
-    if (risk === "MODERATE") return { ...base, background: AMBER.bg, color: AMBER.txt };
-    return                          { ...base, background: GREEN.bg, color: GREEN.txt };
+  const toggle = () => {
+    if (!open) load();
+    setOpen(o => !o);
   };
 
   return (
-    <>
-      {/* Surge + Price summary cards */}
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 12 }}>
-        <div style={{ background: BLUE[50], borderRadius: 10, padding: "14px 16px" }}>
-          <div style={{ fontSize: 10, color: BLUE[600], textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 6, fontWeight: 500 }}>
-            Peak surge period
-          </div>
-          <div style={{ fontSize: 18, fontWeight: 500, color: "#D85A30", marginBottom: 4 }}>
-            {loading ? "—" : result?.peak_surge_period ?? "—"}
-          </div>
-          <div style={{ fontSize: 11, color: BLUE[600] }}>
-            {loading ? "Analysing…" : result?.peak_surge_desc ?? ""}
-          </div>
+    <div style={{
+      border: `0.5px solid ${BLUE[200]}`,
+      borderRadius: 12,
+      marginBottom: 12,
+      overflow: "hidden",
+      background: "#fff",
+    }}>
+      {/* Header / toggle */}
+      <button
+        onClick={toggle}
+        style={{
+          width: "100%", display: "flex", alignItems: "center", gap: 10,
+          padding: "12px 16px", background: "none", border: "none",
+          cursor: "pointer", fontFamily: "inherit",
+        }}
+      >
+        <div style={{
+          width: 8, height: 8, borderRadius: "50%", background: BLUE[400], flexShrink: 0,
+          animation: loading ? "pulse 1.5s infinite" : "none",
+        }} />
+        <div style={{ fontSize: 11, fontWeight: 500, color: BLUE[600], textTransform: "uppercase", letterSpacing: "0.08em", flex: 1, textAlign: "left" }}>
+          Claude AI · forecast insight
         </div>
-        <div style={{ background: BLUE[50], borderRadius: 10, padding: "14px 16px" }}>
-          <div style={{ fontSize: 10, color: BLUE[600], textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 6, fontWeight: 500 }}>
-            Price pressure
-          </div>
-          <div style={{ fontSize: 18, fontWeight: 500, color: "#E24B4A", marginBottom: 4 }}>
-            {loading ? "—" : result ? `${result.price_pressure} · ${result.price_pct}` : "—"}
-          </div>
-          <div style={{ fontSize: 11, color: BLUE[600] }}>
-            {loading ? "Analysing…" : result?.price_desc ?? ""}
-          </div>
+        <div style={{ fontSize: 12, color: BLUE[400] }}>
+          {open ? "▲ hide" : "▼ show analysis"}
         </div>
-      </div>
+      </button>
 
-      {/* AI insight panel */}
-      <div style={{ background: "#fff", border: `0.5px solid ${BLUE[200]}`, borderRadius: 14, padding: "1.1rem 1.25rem", marginBottom: 12 }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 12 }}>
-          <div style={{
-            width: 8, height: 8, borderRadius: "50%", background: BLUE[400], flexShrink: 0,
-            animation: loading ? "pulse 1.5s infinite" : "none",
-          }} />
-          <div style={{ fontSize: 11, fontWeight: 500, color: BLUE[600], textTransform: "uppercase", letterSpacing: "0.08em" }}>
-            Claude AI · surge & ticket price intelligence
-          </div>
-        </div>
-
-        {loading && (
-          <div style={{ display: "flex", gap: 6, alignItems: "center", height: 48 }}>
-            {[0, 1, 2].map(i => (
-              <div key={i} style={{
-                width: 6, height: 6, borderRadius: "50%", background: BLUE[400],
-                animation: `bounce 1.2s ${i * 0.2}s infinite`,
-              }} />
-            ))}
-          </div>
-        )}
-
-        {err && (
-          <div style={{ fontSize: 12, color: RED.txt }}>{err}</div>
-        )}
-
-        {!loading && result && (
-          <div style={{ fontSize: 13, lineHeight: 1.75, color: BLUE[900], whiteSpace: "pre-line" }}>
-            {result.insight}
-          </div>
-        )}
-      </div>
-
-      {/* Route ticket projections */}
-      {!loading && result?.routes?.length ? (
-        <Card label="Projected ticket price changes by route">
-          <ColHeader cols={[
-            { label: "Route", flex: 1 },
-            { label: "Now",      align: "center", width: 62,  flex: 0 },
-            { label: "6-month",  align: "center", width: 70,  flex: 0 },
-            { label: "Risk",     align: "right",  width: 62,  flex: 0 },
-          ]} />
-          {result.routes.map((r, i) => (
-            <div key={i} style={{ ...ROW, borderBottomColor: BLUE[50] }}>
-              <div style={{ flex: 1 }}>
-                <div style={{ fontSize: 13, fontWeight: 500, color: BLUE[900] }}>{r.route}</div>
-                <div style={{ fontSize: 11, color: BLUE[600], marginTop: 2 }}>{r.class}</div>
-              </div>
-              <div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
-                <span style={{ ...pillStyle(1), minWidth: 58, textAlign: "center" }}>{r.now}</span>
-                <span style={{ ...pillStyle(null), minWidth: 68, textAlign: "center" }}>{r.outlook_6mo}</span>
-                <span style={riskPill(r.risk)}>{r.risk}</span>
-              </div>
+      {/* Body */}
+      {open && (
+        <div style={{ padding: "0 16px 14px" }}>
+          {loading && (
+            <div style={{ display: "flex", gap: 6, alignItems: "center", height: 40 }}>
+              {[0, 1, 2].map(i => (
+                <div key={i} style={{
+                  width: 6, height: 6, borderRadius: "50%", background: BLUE[400],
+                  animation: `bounce 1.2s ${i * 0.2}s infinite`,
+                }} />
+              ))}
+              <span style={{ fontSize: 12, color: BLUE[600], marginLeft: 4 }}>Analysing…</span>
             </div>
-          ))}
-        </Card>
-      ) : null}
+          )}
+          {err && <div style={{ fontSize: 12, color: RED.txt }}>{err}</div>}
+          {!loading && text && (
+            <div style={{ fontSize: 13, lineHeight: 1.75, color: BLUE[900], whiteSpace: "pre-line" }}>
+              {text}
+            </div>
+          )}
+        </div>
+      )}
 
       <style>{`
         @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.3} }
         @keyframes bounce { 0%,80%,100%{transform:translateY(0);opacity:.4} 40%{transform:translateY(-5px);opacity:1} }
       `}</style>
-    </>
+    </div>
   );
 }
 
@@ -434,13 +335,37 @@ export default function FerryForecastDashboard() {
   const baselineM = scen?.baseline_M || 0;
   const modRow    = scenArr.find(s => s.scenario === "moderate");
 
+  // ── AI prompts ────────────────────────────────────────────────────────────
+  const monthlyAiPrompt = (() => {
+    const monthStr = fcOnly.slice(0, 12)
+      .map(d => `${d.month} ${d.year}: MoM=${d.mom != null ? d.mom.toFixed(1) + "%" : "—"}${d.oil_shock ? " [OIL SHOCK]" : ""}`)
+      .join(", ");
+    return `You are a maritime transport analyst for the Philippines. Here is the monthly ferry passenger forecast for the next 12 months: ${monthStr}. Context: MARINA approved a 20% fare hike effective March 16 2026 due to an Iran/Hormuz oil shock (+36% Brent).
+
+Write 2 short paragraphs (plain text, no markdown, no bullet points) as an analyst commentary on:
+1. The standout monthly movements — which months surge or dip and why (mention oil shock, holidays, seasonal patterns).
+2. Practical advice for Filipino ferry passengers on when to book and what to expect on fares.
+Be specific: name months and percentages. Keep it concise and sharp.`;
+  })();
+
+  const yearlyAiPrompt = (() => {
+    const yearStr = yFiltered
+      .map(y => `${y.year}${y.isFc ? " (fc)" : ""}: YoY=${y.yoy != null ? (y.yoy >= 0 ? "+" : "") + y.yoy.toFixed(1) + "%" : "—"}`)
+      .join(", ");
+    return `You are a maritime transport analyst for the Philippines. Here is the year-over-year ferry passenger growth data: ${yearStr}. Context: MARINA approved a 20% fare hike effective March 16 2026 due to an Iran/Hormuz oil shock (+36% Brent).
+
+Write 2 short paragraphs (plain text, no markdown, no bullet points) as analyst commentary on:
+1. The long-run growth trend — what's driving growth or contraction across years, and how the oil shock affects the 2026 forecast.
+2. The 2027 outlook and what it signals about the Philippine maritime sector's recovery or expansion.
+Be specific: cite the actual percentages. Keep it concise and sharp.`;
+  })();
+
   // ── Tab definitions ──────────────────────────────────────────────────────
   const TABS: { key: Tab; label: string }[] = [
     { key: "monthly",   label: "Monthly"   },
     { key: "yearly",    label: "Yearly"    },
     { key: "seasonal",  label: "Seasonal"  },
     { key: "scenarios", label: "Scenarios" },
-    { key: "ai",        label: "AI predictions" },
   ];
 
   // ── Render ────────────────────────────────────────────────────────────────
@@ -510,6 +435,10 @@ export default function FerryForecastDashboard() {
           {shockPt && (
             <Alert warn text={`Oil shock: ${shockPt.month} ${shockPt.year} — Iran/Hormuz modelled as +36% Brent spike. MARINA approved 20% fare hike Mar 16 2026.`} />
           )}
+
+          {/* AI insight for monthly */}
+          <AiInsightPanel prompt={monthlyAiPrompt} cacheKey="monthly" />
+
           <Card label="Forecast — predicted passengers & month-over-month change">
             {/* Legend */}
             <div style={{ display: "flex", gap: 16, fontSize: 11, color: BLUE[600], marginBottom: 14, alignItems: "center", flexWrap: "wrap" }}>
@@ -567,25 +496,30 @@ export default function FerryForecastDashboard() {
 
       {/* ── YEARLY ── */}
       {tab === "yearly" && (
-        <Card label="Year-over-year passenger growth">
-          <ColHeader cols={[
-            { label: "Year",       width: 150, flex: 0 },
-            { label: "Trend",      flex: 1 },
-            { label: "YoY change", width: 70,  align: "right", flex: 0 },
-          ]} />
-          {yFiltered.map(y => (
-            <div key={y.year} style={{ ...ROW }}>
-              <span style={{ fontSize: 13, fontWeight: 500, color: BLUE[900], minWidth: 150 }}>
-                {y.isFc ? `${y.year} ` : String(y.year)}
-                {y.isFc && <span style={{ fontSize: 10, color: BLUE[600] }}>(forecast)</span>}
-              </span>
-              <div style={{ flex: 1, paddingLeft: 8 }}>
-                <BarTrack pct={Math.abs(y.yoy!) / maxYoy * 100} color={y.yoy! >= 0 ? "#639922" : "#E24B4A"} width={90} />
+        <>
+          {/* AI insight for yearly */}
+          <AiInsightPanel prompt={yearlyAiPrompt} cacheKey="yearly" />
+
+          <Card label="Year-over-year passenger growth">
+            <ColHeader cols={[
+              { label: "Year",       width: 150, flex: 0 },
+              { label: "Trend",      flex: 1 },
+              { label: "YoY change", width: 70,  align: "right", flex: 0 },
+            ]} />
+            {yFiltered.map(y => (
+              <div key={y.year} style={{ ...ROW }}>
+                <span style={{ fontSize: 13, fontWeight: 500, color: BLUE[900], minWidth: 150 }}>
+                  {y.isFc ? `${y.year} ` : String(y.year)}
+                  {y.isFc && <span style={{ fontSize: 10, color: BLUE[600] }}>(forecast)</span>}
+                </span>
+                <div style={{ flex: 1, paddingLeft: 8 }}>
+                  <BarTrack pct={Math.abs(y.yoy!) / maxYoy * 100} color={y.yoy! >= 0 ? "#639922" : "#E24B4A"} width={90} />
+                </div>
+                <span style={pillStyle(y.yoy)}>{fmt(y.yoy)}</span>
               </div>
-              <span style={pillStyle(y.yoy)}>{fmt(y.yoy)}</span>
-            </div>
-          ))}
-        </Card>
+            ))}
+          </Card>
+        </>
       )}
 
       {/* ── SEASONAL ── */}
@@ -680,17 +614,6 @@ export default function FerryForecastDashboard() {
             })}
           </div>
         </>
-      )}
-
-      {/* ── AI PREDICTIONS ── */}
-      {tab === "ai" && (
-        <AiPredictionsTab
-          fcOnly={fcOnly}
-          scenArr={scenArr}
-          hm={hm}
-          fm={fm}
-          mns={mns}
-        />
       )}
     </div>
   );
