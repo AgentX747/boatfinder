@@ -1,20 +1,35 @@
-import { useState, useEffect, useMemo } from "react"
-import UserSidebar from "../../components/userdashboardsidebar.js"
 import {
-  Bookmark, X, AlertTriangle, XCircle, CheckCircle,
-  Wind, Waves, Clock, RefreshCw, Droplets, Gauge, Thermometer, SearchX
+  AlertCircle,
+  AlertTriangle,
+  Bookmark,
+  CheckCircle,
+  Clock,
+  Clock as ClockIcon,
+  Droplets,
+  FileText,
+  Gauge,
+  Mail, MessageSquare,
+  RefreshCw,
+  SearchX,
+  Tag,
+  Thermometer,
+  Waves,
+  Wind,
+  X,
+  XCircle
 } from "lucide-react"
-import { ViewBoatsCard } from "../../cards/viewboatscard.js"
-import { apiFetch } from "../../utils/apifetch.js"
+import { useEffect, useMemo, useState } from "react"
 import { useNavigate } from "react-router-dom"
-import PendingBookingCard from "../../cards/pendingbookingcard.js"
 import AcceptedBookingCard from "../../cards/acceptedbookingcard.js"
-import WeatherForecastCard from "../../cards/weatherforecastcard.js"
 import UserBookingHistoryCard from "../../cards/bookinghistory.js"
-import { Mail, MessageSquare, Tag, AlertCircle, FileText, Clock as ClockIcon } from 'lucide-react'
-import { SupportTicketCard } from "../../cards/supportticketcard.js"
+import PendingBookingCard from "../../cards/pendingbookingcard.js"
 import { RefundTicketCard } from "../../cards/refundticketcard.js"
+import { SupportTicketCard } from "../../cards/supportticketcard.js"
+import { ViewBoatsCard } from "../../cards/viewboatscard.js"
+import WeatherForecastCard from "../../cards/weatherforecastcard.js"
 import PricePredictionGraph from "../../components/pricepredictiongraph.js"
+import UserSidebar from "../../components/userdashboardsidebar.js"
+import { apiFetch } from "../../utils/apifetch.js"
 
 
 type SealegsClass = "GO" | "CAUTION" | "NO-GO" | string
@@ -54,14 +69,9 @@ interface BackendCurrentWeather {
 
 type CancelModalType = "decline" | "cancel" | null
 
-// ─── CF normalisation ─────────────────────────────────────────────────────────
-// The weighted CF endpoint (/user/recommendations) returns snake_case BoatRow
-// fields.  Normalise ONCE at ingestion so every downstream reference — key
-// prop, click tracking, card props — uses a guaranteed camelCase shape with
-// no undefined fields.
 interface NormalisedBoat {
   boatId:       number
-  boatName:     string   // camelCase — not boat_name
+  boatName:     string
   vesselType:   string
   capacity:     string
   ticketPrice:  number
@@ -75,7 +85,7 @@ interface NormalisedBoat {
 function normaliseBoat(raw: any): NormalisedBoat {
   return {
     boatId:       Number(raw.boat_id              ?? raw.boatId       ?? 0),
-    boatName:     String(raw.boat_name            ?? raw.boatName     ?? ""),  // ← was boat_name: on the left
+    boatName:     String(raw.boat_name            ?? raw.boatName     ?? ""),
     vesselType:   String(raw.vessel_type          ?? raw.vesselType   ?? ""),
     capacity:     String(raw.capacity_information ?? raw.capacity     ?? ""),
     ticketPrice:  Number(raw.ticket_price         ?? raw.ticketPrice  ?? 0),
@@ -86,6 +96,7 @@ function normaliseBoat(raw: any): NormalisedBoat {
     score:        Number(raw.score                ?? 0),
   }
 }
+
 const ROUTE_MAP: Record<string, string[]> = {
   "Marigondon Port": ["Pangan-an Island", "Cawhagan", "Olango"],
   "Hilton":          ["Olango"],
@@ -120,6 +131,7 @@ function formatDate(dateStr: string) {
   } catch { return dateStr }
 }
 
+// ─── Weather Caution Modal ────────────────────────────────────────────────────
 interface WeatherCautionModalProps {
   open: boolean
   onClose: () => void
@@ -301,6 +313,91 @@ function WeatherCautionModal({ open, onClose }: WeatherCautionModalProps) {
   )
 }
 
+// ─── Weather Block Booking Modal ──────────────────────────────────────────────
+// Shown when a user tries to book a boat on a NO-GO date
+interface WeatherBlockModalProps {
+  open: boolean
+  onClose: () => void
+  tripDate: string
+  classification: string
+  shortSummary: string
+}
+
+function WeatherBlockModal({ open, onClose, tripDate, classification, shortSummary }: WeatherBlockModalProps) {
+  if (!open) return null
+  return (
+    <div className="fixed inset-0 z-[70] flex items-center justify-center p-3 sm:p-6">
+      <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={onClose} />
+      <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden border border-red-200">
+        {/* Header */}
+        <div className="bg-gradient-to-r from-red-600 to-red-700 px-5 sm:px-6 py-4 sm:py-5 flex items-start gap-3">
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center gap-2 mb-0.5">
+              <XCircle className="w-5 h-5 text-white flex-shrink-0" />
+              <h2 className="text-white font-bold text-base sm:text-lg">Booking Unavailable</h2>
+            </div>
+            <p className="text-white/80 text-xs sm:text-sm">
+              This trip cannot be booked due to dangerous weather conditions.
+            </p>
+          </div>
+          <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-white/20 transition-colors text-white flex-shrink-0">
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+
+        {/* Body */}
+        <div className="p-5 sm:p-6 space-y-4">
+          {/* Classification badge + date */}
+          <div className="flex items-center gap-3 flex-wrap">
+            <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full text-sm font-bold bg-red-100 text-red-800 border border-red-200">
+              <XCircle className="w-4 h-4" /> NO-GO
+            </span>
+            <span className="text-sm font-medium text-slate-600 flex items-center gap-1.5">
+              <Clock className="w-4 h-4" />
+              {formatDate(tripDate)}
+            </span>
+          </div>
+
+          {/* Warning box */}
+          <div className="bg-red-50 border border-red-200 rounded-xl p-4 flex items-start gap-3">
+            <AlertTriangle className="w-5 h-5 text-red-600 flex-shrink-0 mt-0.5" />
+            <div className="space-y-1">
+              <p className="text-sm font-semibold text-red-900">
+                Sealegs SpotCast has classified this date as NO-GO
+              </p>
+              {shortSummary && (
+                <p className="text-xs text-red-700 leading-relaxed">{shortSummary}</p>
+              )}
+            </div>
+          </div>
+
+          {/* Info */}
+          <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 space-y-2">
+            <p className="text-sm font-semibold text-slate-800">What does this mean?</p>
+            <ul className="text-xs text-slate-600 space-y-1.5 list-disc list-inside leading-relaxed">
+              <li>Sea conditions on this date are deemed unsafe for maritime travel.</li>
+              <li>Trips scheduled on NO-GO dates are automatically cancelled.</li>
+              <li>Please choose a different travel date with GO or CAUTION status.</li>
+            </ul>
+          </div>
+
+          <p className="text-xs text-slate-400 text-center">Powered by Sealegs SpotCast AI</p>
+        </div>
+
+        {/* Footer */}
+        <div className="px-5 sm:px-6 pb-5 sm:pb-6">
+          <button
+            onClick={onClose}
+            className="w-full py-3 rounded-xl bg-red-600 hover:bg-red-700 text-white font-semibold text-sm transition-colors shadow-md"
+          >
+            Choose a Different Date
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // UserDashboard
 // ─────────────────────────────────────────────────────────────────────────────
@@ -327,6 +424,17 @@ export default function UserDashboard() {
   const [bookingHistory, setBookingHistory]     = useState<any[]>([])
   const [acceptedBookings, setAcceptedBookings] = useState<any[]>([])
   const [weatherModalOpen, setWeatherModalOpen] = useState(false)
+
+  // ── Weather classifications cache (for booking block check) ───────────────
+  const [weatherClassifications, setWeatherClassifications] = useState<DayClassification[]>([])
+
+  // ── NO-GO booking block modal ─────────────────────────────────────────────
+  const [noGoBlockModal, setNoGoBlockModal] = useState<{
+    open: boolean
+    tripDate: string
+    classification: string
+    shortSummary: string
+  }>({ open: false, tripDate: "", classification: "", shortSummary: "" })
 
   // ── Auto-cancellation warning ─────────────────────────────────────────────
   const [cancelWarningOpen, setCancelWarningOpen]       = useState(false)
@@ -373,7 +481,31 @@ export default function UserDashboard() {
     setTicketDetails(prev => ({ ...prev, [name]: value }))
   }
 
-  // ── FIX 1: Use snake_case booking_id consistently (matches backend response) ──
+  // ── Check if a given date is NO-GO ────────────────────────────────────────
+  function getWeatherClassForDate(dateStr: string): DayClassification | null {
+    if (!dateStr) return null
+    const datePart = dateStr.slice(0, 10)
+    return weatherClassifications.find(d => d.date === datePart) ?? null
+  }
+
+  // ── Attempt to navigate to booking — block if NO-GO ───────────────────────
+  // tripDate should be "YYYY-MM-DD"
+  function attemptBooking(boatId: number | string, tripDate?: string) {
+    if (tripDate) {
+      const dayInfo = getWeatherClassForDate(tripDate)
+      if (dayInfo && normalizeClass(dayInfo.classification) === "NO-GO") {
+        setNoGoBlockModal({
+          open: true,
+          tripDate: dayInfo.date,
+          classification: dayInfo.classification,
+          shortSummary: dayInfo.short_summary || dayInfo.summary,
+        })
+        return
+      }
+    }
+    navigate(`/bookboat/${boatId}`)
+  }
+
   function openCancelModal(bookingId: string, ticketCode: string, boatName: string) {
     setCancelBookingId(bookingId)
     setCancelBookingCode(ticketCode)
@@ -394,9 +526,6 @@ export default function UserDashboard() {
     setCancelling(false)
   }
 
-  // ── FIX 2: Decline only works on PENDING bookings — matches backend SQL ────
-  // Backend: UPDATE bookings SET bookingstatus='cancelled'
-  //          WHERE booking_id=? AND fk_booking_userId=? AND bookingstatus='pending'
   async function handleDeclineBooking() {
     if (!cancelBookingId) return
     setCancelling(true)
@@ -405,7 +534,6 @@ export default function UserDashboard() {
       if (!res.ok) throw new Error("Failed to decline booking")
       alert("Booking declined successfully.")
       closeModal()
-      // Remove from pending state immediately (no full reload needed)
       setPendingBookings(prev => prev.filter(b => String(b.booking_id) !== cancelBookingId))
     } catch (err) {
       console.error(err)
@@ -415,25 +543,17 @@ export default function UserDashboard() {
     }
   }
 
-  // ── FIX 3: Cancel accepted bookings — backend only allows cancelling PENDING.
-  // The cancel endpoint filters on bookingstatus='pending', so accepted bookings
-  // cannot be cancelled via this route. Show a clear error to the user instead
-  // of silently failing. If your backend later supports cancelling accepted
-  // bookings (e.g. a separate endpoint), update the URL here.
   async function handleCancelBooking() {
     if (!cancelBookingId) return
     setCancelling(true)
     try {
       const res = await apiFetch(`https://boatfinder.onrender.com/user/cancelbooking/${cancelBookingId}`, { method: "PATCH", credentials: "include" })
       if (!res.ok) {
-        // Backend returns 404 when booking is not in 'pending' state.
-        // Accepted bookings cannot be cancelled via this endpoint.
         const errData = await res.json().catch(() => ({}))
         throw new Error(errData.message || "Failed to cancel booking. Only pending bookings can be cancelled.")
       }
       alert("Booking cancelled successfully.")
       closeModal()
-      // ── FIX 3b: Use booking_id (snake_case) to filter — matches backend response ──
       setAcceptedBookings(prev => prev.filter(b => String(b.booking_id) !== cancelBookingId))
     } catch (err: any) {
       console.error(err)
@@ -443,27 +563,23 @@ export default function UserDashboard() {
     }
   }
 
-  // ── FIX 4: checkForAutoCancelledTrips used wrong field ───────────────────
-  // Backend sets `bookingstatus = 'cancelled'` NOT `boatstatus = 'cancelled'`.
-  // Also: boatstatus tracks whether the boat/operator cancelled the trip
-  // (e.g. weather-related), while bookingstatus tracks the booking's lifecycle.
-  // We check BOTH so weather-cancelled trips by operators are also caught.
   async function checkForAutoCancelledTrips(pending: any[], accepted: any[]) {
     try {
       const res = await fetch("https://boatfinder.onrender.com/weather/airesponse", { method: "GET", credentials: "include" })
       if (!res.ok) return
       const spotData = await res.json()
+      const classifications: DayClassification[] = spotData.daily_classifications ?? []
+
+      // Cache classifications for booking-block checks
+      setWeatherClassifications(classifications)
+
       const noGoDates = new Set<string>(
-        (spotData.daily_classifications ?? [])
-          .filter((d: any) => {
-            const cls = (d.classification ?? "").toUpperCase().trim()
-            return cls === "NO-GO" || cls === "NOGO" || cls === "HIGH" || cls === "DANGEROUS"
-          })
+        classifications
+          .filter((d: any) => normalizeClass(d.classification) === "NO-GO")
           .map((d: any) => d.date)
       )
       if (noGoDates.size === 0) return
 
-      // ── FIX 4: Check bookingstatus OR boatstatus for 'cancelled' ──────────
       const cancelled = [...pending, ...accepted]
         .filter(b => {
           const tripDate = String(b.trip_date ?? b.tripDate ?? "").slice(0, 10)
@@ -567,15 +683,12 @@ export default function UserDashboard() {
       async function getRecommendedBoats() {
         setBoatsLoading(true)
         try {
-          // Weighted CF endpoint — userId is read from the JWT cookie server-side,
-          // so no URL param needed.
           const res = await apiFetch(
             "https://boatfinder.onrender.com/user/recommendations",
             { method: "GET", credentials: "include" }
           )
           if (!res.ok) throw new Error("Failed to fetch recommendations")
           const data = await res.json()
-          // ── Normalise at ingestion: one canonical shape for all downstream use ──
           setRecommendedBoats(Array.isArray(data) ? data.map(normaliseBoat) : [])
         } catch (err) {
           console.error("Failed to fetch recommendations", err)
@@ -585,7 +698,6 @@ export default function UserDashboard() {
         }
       }
 
-      // Returns data so we can pass it to checkForAutoCancelledTrips
       async function getPendingBookings(): Promise<any[]> {
         try {
           const res = await apiFetch("https://boatfinder.onrender.com/user/getpendingbookings", { method: "GET", credentials: "include" })
@@ -629,16 +741,14 @@ export default function UserDashboard() {
         } catch (err) { console.error("Failed to fetch refund tickets", err); setRefundTickets([]) }
       }
 
-      // Load bookings first, then silently check for auto-cancellations
       const [pendingData, acceptedData] = await Promise.all([
         getPendingBookings(),
         getAcceptedBookings(),
       ])
 
-      // Fires automatically — no button needed
+      // Also fetches and caches weather classifications
       checkForAutoCancelledTrips(pendingData, acceptedData)
 
-      // Rest loads in parallel
       await Promise.all([
         getallBoats(),
         getRecommendedBoats(),
@@ -738,7 +848,7 @@ export default function UserDashboard() {
                     <p className="text-lg font-bold text-gray-800 mb-1">No boats found</p>
                     <p className="text-gray-500 text-sm max-w-sm">No boats match your selected route or timeslot. Try adjusting your filters or click <span className="font-semibold text-blue-600">Clear</span> to see all available boats.</p>
                   </div>
-                  <button className="mt-1 px-6 py-2.5 bg-blue-600 text-white font-semibold rounded-lg hover:bg-blue-700 transition-colors text-sm flex items-center gap-2" onClick={handleClearSearch}><X className="w-4 h-4" />Clear & Show All Boats</button>
+                  <button className="mt-1 px-6 py-2.5 bg-blue-600 text-white font-semibold rounded-lg hover:bg-blue-700 transition-colors text-sm flex items-center gap-2" onClick={handleClearSearch}><X className="w-4 h-4" />Clear &amp; Show All Boats</button>
                 </div>
               ) : (
                 <div className="bg-white rounded-lg shadow-lg overflow-hidden">
@@ -778,6 +888,7 @@ export default function UserDashboard() {
                               })()}
                             </td>
                             <td className="px-4 sm:px-6 py-4">
+                              {/* Book Trip — no specific tripDate here so no block, user picks date on next screen */}
                               <button className="bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white px-3 sm:px-4 py-2 rounded-lg font-medium flex items-center gap-2 transition-colors text-sm whitespace-nowrap" onClick={() => navigate(`/bookboat/${boat.boatId || boat.boat_id}`)}>
                                 <Bookmark className="w-4 h-4" />Book Trip
                               </button>
@@ -825,7 +936,6 @@ export default function UserDashboard() {
                       tripDate={booking.trip_date}
                       boatStatus={booking.boatstatus ?? "active"}
                       navigateTo={() => navigate(`/currentbookings/${booking.booking_id}`)}
-                      // ── FIX 1 applied here: use booking.booking_id (snake_case) ──
                       declinePendingBookings={() => openDeclineModal(
                         String(booking.booking_id),
                         booking.ticketcode,
@@ -847,9 +957,6 @@ export default function UserDashboard() {
                         boatStatus={booking.boatstatus ?? "active"}
                         navigateTo={() => navigate(`/currentbookings/${booking.booking_id}`)}
                       />
-                      {/* Cancel button for accepted bookings — note: backend only cancels
-                          pending status. If your backend adds a separate cancel-accepted
-                          endpoint, update handleCancelBooking's URL accordingly. */}
                       <button
                         className="mt-2 px-4 py-1.5 bg-red-100 hover:bg-red-200 text-red-700 text-xs font-semibold rounded-lg transition-colors"
                         onClick={() => openCancelModal(
@@ -879,7 +986,6 @@ export default function UserDashboard() {
       case "viewboats":
         return (
           <>
-            {/* ── Hero banner ──────────────────────────────────────────────── */}
             <div className="relative w-full overflow-hidden bg-gradient-to-r from-blue-600 to-blue-700 py-12 sm:py-16 md:py-20">
               <svg className="absolute inset-0 w-full h-full" viewBox="0 0 1200 120" preserveAspectRatio="none" style={{ opacity: 0.1 }}>
                 <defs>
@@ -905,7 +1011,6 @@ export default function UserDashboard() {
               </div>
             </div>
 
-            {/* ── Boat grid ────────────────────────────────────────────────── */}
             <div className="flex flex-row flex-wrap gap-4 sm:gap-5 p-4 sm:p-8" style={{ background: "#f0f6ff" }}>
               {boatsLoading ? (
                 <p className="text-sm text-gray-400 w-full text-center py-10">
@@ -918,11 +1023,10 @@ export default function UserDashboard() {
               ) : (
                 recommendedBoats.map((boat) => (
                   <div
-                    key={boat.boatId}       /* stable numeric id — never undefined after normaliseBoat() */
+                    key={boat.boatId}
                     className="cursor-pointer"
                     onClick={() => {
-                      // Fire-and-forget: record the click so the CF model learns
-                      // from this interaction. boatId is guaranteed a number here.
+                      // Track click then navigate to bookboat — date is chosen on that page
                       if (boat.boatId) {
                         apiFetch("https://boatfinder.onrender.com/user/track", {
                           method: "POST",
@@ -934,15 +1038,14 @@ export default function UserDashboard() {
                       navigate(`/bookboat/${boat.boatId}`)
                     }}
                   >
-                    {/* All props are guaranteed strings/numbers — no fallback chains needed */}
-    <ViewBoatsCard
-  img={boat.image ?? undefined}
-  boatName={boat.boatName}
-  vesselType={boat.vesselType}
-  capacity={boat.capacity}        // already a string from normaliseBoat
-  ticketPrice={boat.ticketPrice}
-  operatorName={boat.operatorName}
-/>
+                    <ViewBoatsCard
+                      img={boat.image ?? undefined}
+                      boatName={boat.boatName}
+                      vesselType={boat.vesselType}
+                      capacity={boat.capacity}
+                      ticketPrice={boat.ticketPrice}
+                      operatorName={boat.operatorName}
+                    />
                   </div>
                 ))
               )}
@@ -1118,6 +1221,15 @@ export default function UserDashboard() {
   return (
     <div className="flex min-h-screen">
 
+      {/* ── NO-GO Weather Block Modal ─────────────────────────────────────── */}
+      <WeatherBlockModal
+        open={noGoBlockModal.open}
+        onClose={() => setNoGoBlockModal(prev => ({ ...prev, open: false }))}
+        tripDate={noGoBlockModal.tripDate}
+        classification={noGoBlockModal.classification}
+        shortSummary={noGoBlockModal.shortSummary}
+      />
+
       {/* ── Auto-cancellation warning — fires automatically on mount ─────── */}
       {cancelWarningOpen && (
         <div className="fixed inset-0 z-[60] flex items-center justify-center p-3 sm:p-6">
@@ -1196,7 +1308,7 @@ export default function UserDashboard() {
         </div>
       )}
 
-      {/* Weather Caution Modal — only opens when user clicks the bell */}
+      {/* Weather Caution Modal */}
       <WeatherCautionModal open={weatherModalOpen} onClose={() => setWeatherModalOpen(false)} />
 
       {/* Cancel / Decline Modal */}
