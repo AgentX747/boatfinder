@@ -112,12 +112,11 @@ export async function physicalbookBoatController(req: Request, res: Response) {
       return res.status(400).json({ message: 'trip date is required' });
     }
 
-    // BUG FIX: sub is the logged-in USER's id — use it as userId, NOT boatId.
-    // The boatId lives in req.body and is already extracted inside physicalbookTransaction.
     const { sub, role } = req.user as AuthPayload;
-    const userId = parseInt(sub);  // ← was: const boatId = parseInt(sub) ← WRONG
+    const userId = parseInt(sub);
+    const userRole = Array.isArray(role) ? role[0] : role ?? null;  // ← normalize to string | null
 
-    const result = await userService.physicalbookTransaction(userId, req.body, role);
+    const result = await userService.physicalbookTransaction(userId, req.body, userRole);
 
     return res.json({
       message: 'Booking created successfully',
@@ -125,7 +124,7 @@ export async function physicalbookBoatController(req: Request, res: Response) {
     });
   } catch (err: any) {
     console.error('Error in physical booking:', err);
-    return res.status(500).json({ message: err.message || 'Internal server error' });
+    return res.status(err.status || 500).json({ message: err.message || 'Internal server error' });
   }
 }
 
@@ -322,11 +321,11 @@ export async function onlinebookBoatController(req: Request, res: Response) {
       return res.status(400).json({ message: 'trip date is required' });
     }
 
-    // BUG FIX: same issue as physicalbookBoatController — sub = userId, not boatId
     const { sub, role } = req.user as AuthPayload;
-    const userId = parseInt(sub);  // ← was: const boatId = parseInt(sub) ← WRONG
+    const userId = parseInt(sub);
+    const userRole = Array.isArray(role) ? role[0] : role ?? null;  // ← same fix
 
-    const result = await onlineService.confirmOnlinePayment(userId, req.body, role);
+    const result = await onlineService.confirmOnlinePayment(userId, req.body, userRole);
 
     return res.json({
       message: 'Booking created successfully',
@@ -334,10 +333,9 @@ export async function onlinebookBoatController(req: Request, res: Response) {
     });
   } catch (err: any) {
     console.error('Error in online booking:', err);
-    return res.status(500).json({ message: err.message || 'Internal server error' });
+    return res.status(err.status || 500).json({ message: err.message || 'Internal server error' });
   }
 }
-
 export async function refundTicketController(req: Request, res: Response) {
   try {
     const user = req.user as AuthPayload;
