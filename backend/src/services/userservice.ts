@@ -219,10 +219,11 @@ export async function getRecommendedBoatsWeighted(
   userId: string,
   limit  = 6
 ): Promise<BoatRow[]> {
-  const [{ matrix, rawPopularity, validBoatIds }, allBoats, bookedBoatIds] =
+  const [{ matrix, rawPopularity, validBoatIds }, allBoats, bookedBoatIdsArray] =
     await Promise.all([
       buildDecayedMatrix(),
       getAllBoats(),
+      // ✅ Cache as plain array, NOT a Set
       withCache(`user:booked:${userId}`, BOOKING_TTL, async () => {
         const [rows] = await connection.execute<RowDataPacket[]>(
           `SELECT DISTINCT fk_booking_boatId AS boat_id
@@ -232,9 +233,12 @@ export async function getRecommendedBoatsWeighted(
              AND fk_booking_boatId IS NOT NULL`,
           [userId]
         );
-        return new Set<string>(rows.map(r => String(r.boat_id)));
+        return rows.map(r => String(r.boat_id)); // ✅ plain array — survives JSON
       }),
     ]);
+
+  // ✅ Rehydrate array → Set after cache read
+  const bookedBoatIds = new Set<string>(bookedBoatIdsArray);
 
   const boatMap = new Map<string, BoatRow>(
     (allBoats as BoatRow[])
@@ -275,7 +279,7 @@ export async function getRecommendedBoatsWeighted(
     return (allBoats as BoatRow[])
       .filter(b => {
         const bid = String(b.boat_id);
-        return validBoatIds.has(bid) && !(bookedBoatIds as Set<string>).has(bid);
+        return validBoatIds.has(bid) && !bookedBoatIds.has(bid);
       })
       .map(b => ({ ...b, score: rawPopularity[String(b.boat_id)] ?? 0 }))
       .sort((a, b) => (b.score ?? 0) - (a.score ?? 0))
@@ -283,8 +287,8 @@ export async function getRecommendedBoatsWeighted(
   }
 
   const penaltyFor = (bid: string): number => {
-    if ((bookedBoatIds as Set<string>).has(bid)) return BOOKED_PENALTY;
-    if (interactedByUser.has(bid))               return REPEAT_INTERACTION_PENALTY;
+    if (bookedBoatIds.has(bid))      return BOOKED_PENALTY;
+    if (interactedByUser.has(bid))   return REPEAT_INTERACTION_PENALTY;
     return 1.0;
   };
 
@@ -292,7 +296,7 @@ export async function getRecommendedBoatsWeighted(
     .map((boat): ScoredBoatRow | undefined => {
       const bid     = String(boat.boat_id);
       const cfScore = boatScore[bid];
-      if (cfScore === undefined && !interactedByUser.has(bid) && !(bookedBoatIds as Set<string>).has(bid)) {
+      if (cfScore === undefined && !interactedByUser.has(bid) && !bookedBoatIds.has(bid)) {
         return undefined;
       }
       return { ...boat, score: (cfScore ?? 0) * penaltyFor(bid) };
@@ -309,7 +313,7 @@ export async function getRecommendedBoatsWeighted(
         return (
           validBoatIds.has(bid) &&
           !scoredIds.has(bid) &&
-          !(bookedBoatIds as Set<string>).has(bid) &&
+          !bookedBoatIds.has(bid) &&
           !interactedByUser.has(bid)
         );
       })
