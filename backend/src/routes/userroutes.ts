@@ -15,8 +15,6 @@ import {
   getRecommendedBoatsWeightedController,
   getRefundTicketCardsController,
   getRefundTicketDetailsController,
-  // ── NEW ──────────────────────────────────────────────────────────────────
-  getSlotCountsController,
   getSupportTicketCardsController,
   getTicketDetailsController,
   onlinebookBoatController,
@@ -24,7 +22,7 @@ import {
   refundTicketController,
   searchBoatsController,
   submitTicketController,
-  trackInteractionController,
+  trackInteractionController
 } from "../controllers/usercontroller.js";
 import { requireAuth } from "../middleware/authmiddleware.js";
 import { authorizeRole } from "../middleware/authorizationmiddleware.js";
@@ -33,9 +31,8 @@ import {
   bookingActionLimiter,
   bookingLimiter,
   editLimiter,
-  readLimiter,
   ticketLimiter,
-  uploadLimiter,
+  uploadLimiter
 } from "../middleware/ratelimiters.js";
 import { uploadGcashImage } from "../middleware/uploadgcashimage.js";
 import { uploadRefundImage } from "../middleware/uploadrefundimage.js";
@@ -69,7 +66,6 @@ router.get("/getcurrentbookingdetails/:bookingId",  requireAuth, getBookingDetai
 // Query param: ?date=YYYY-MM-DD
 // Response: { "7:00 AM": 17, "9:00 AM": 3 }
 // Used by BookBoat.tsx to display remaining seats per slot before booking.
-router.get("/slotcounts/:boatId",  requireAuth, authorizeRole("user"), readLimiter, getSlotCountsController);
 
 // ── Tickets / Refunds ────────────────────────────────────────────────────────
 router.get("/getrefundticketcards",          requireAuth, authorizeRole("user"), getRefundTicketCardsController);

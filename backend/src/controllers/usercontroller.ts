@@ -1,15 +1,8 @@
 import { Request, Response } from 'express';
 import { AuthPayload } from '../middleware/authmiddleware.js';
-import * as onlineService from "../services/onlinepaymentservice.js";
 import * as userService from "../services/userservice.js";
 
-// ─── Helper ───────────────────────────────────────────────────────────────────
-// AuthPayload.role can be string | string[] depending on the JWT library version.
-// This collapses it to string | null so service functions always receive the right type.
-function resolveRole(role: string | string[] | undefined | null): string | null {
-  if (!role) return null;
-  return Array.isArray(role) ? (role[0] ?? null) : role;
-}
+import * as onlineService from "../services/onlinepaymentservice.js";
 
 export async function searchBoatsController(req: Request, res: Response) {
   try {
@@ -21,6 +14,7 @@ export async function searchBoatsController(req: Request, res: Response) {
 
     const { sub } = user;
     const routeQuery = [req.query.routeFrom, req.query.routeTo].filter(Boolean).join(" → ");
+    // Route-only search: boatId=0 is intentionally skipped inside trackInteraction
     if (routeQuery) {
       userService.trackInteraction(Number(sub), 0, "search", routeQuery).catch(() => {});
     }
@@ -107,7 +101,7 @@ export async function bookBoatdetailsController(req: Request, res: Response) {
     return res.json(boatDetails);
 
   } catch (err: any) {
-    return res.status(err.status || 500).json({ message: err.message || 'Internal server error' });
+    return res.status(500).json({ message: err.message || 'Internal server error' });
   }
 }
 
@@ -119,8 +113,8 @@ export async function physicalbookBoatController(req: Request, res: Response) {
     }
 
     const { sub, role } = req.user as AuthPayload;
-    const userId   = parseInt(sub);
-    const userRole = resolveRole(role);
+    const userId = parseInt(sub);
+    const userRole = Array.isArray(role) ? role[0] : role ?? null;  // ← normalize to string | null
 
     const result = await userService.physicalbookTransaction(userId, req.body, userRole);
 
@@ -177,7 +171,7 @@ export async function getBookingDetailsController(req: Request, res: Response) {
     }
 
     const { sub } = req.user as AuthPayload;
-    const userID    = parseInt(sub);
+    const userID = parseInt(sub);
     const bookingId = String(req.params.bookingId);
 
     const bookingDetails = await userService.getCurrentBookingDetails(userID, bookingId);
@@ -200,7 +194,7 @@ export async function cancelPendingBookingController(req: Request, res: Response
     }
 
     const { sub } = req.user as AuthPayload;
-    const userID    = Number(sub);
+    const userID = Number(sub);
     const bookingId = String(req.params.bookingId);
 
     const result = await userService.cancelBooking(userID, Number(bookingId));
@@ -221,7 +215,7 @@ export async function cancelPendingBookingController(req: Request, res: Response
 export async function getBookingHistoryController(req: Request, res: Response) {
   try {
     const { sub } = req.user as AuthPayload;
-    const userID  = parseInt(sub);
+    const userID = parseInt(sub);
     const bookingHistory = await userService.getBookingHistory(userID);
     return res.json(bookingHistory);
   } catch (error) {
@@ -233,7 +227,7 @@ export async function getBookingHistoryController(req: Request, res: Response) {
 export async function getCurrentUserDetailsCotroller(req: Request, res: Response) {
   try {
     const { sub } = req.user as AuthPayload;
-    const userID  = parseInt(sub);
+    const userID = parseInt(sub);
 
     const user = await userService.userCurrentDetails(userID);
 
@@ -245,10 +239,8 @@ export async function getCurrentUserDetailsCotroller(req: Request, res: Response
 }
 
 export async function confirmEditUserController(req: Request, res: Response) {
-  const {
-    firstName, lastName, userName, email, password, confirmPassword,
-    phone_number, address, gender, birthdate,
-  } = req.body;
+  const { firstName, lastName, userName, email, password, confirmPassword,
+    phone_number, address, gender, birthdate } = req.body;
 
   if (!firstName || !lastName || !userName || !email || !phone_number || !address || !gender || !birthdate) {
     return res.status(400).json({ message: "All fields are required" });
@@ -285,7 +277,7 @@ export async function confirmEditUserController(req: Request, res: Response) {
 export async function submitTicketController(req: Request, res: Response) {
   try {
     const { sub } = req.user as AuthPayload;
-    const userId  = parseInt(sub);
+    const userId = parseInt(sub);
 
     const result = await userService.submitTicket(req.body, userId);
 
@@ -306,7 +298,7 @@ export async function getOnlineTripDetailsController(req: Request, res: Response
       return res.status(401).json({ message: "Unauthorized" });
     }
 
-    const boatId      = String(req.params.boatId);
+    const boatId = String(req.params.boatId);
     const tripDetails = await onlineService.getTripDetails(Number(boatId));
 
     if (!tripDetails || tripDetails.length === 0) {
@@ -316,7 +308,9 @@ export async function getOnlineTripDetailsController(req: Request, res: Response
     return res.json(tripDetails[0]);
   } catch (err: any) {
     console.error("Error fetching trip details:", err);
-    return res.status(500).json({ message: err.message || "Internal server error" });
+    return res.status(500).json({
+      message: err.message || "Internal server error",
+    });
   }
 }
 
@@ -328,8 +322,8 @@ export async function onlinebookBoatController(req: Request, res: Response) {
     }
 
     const { sub, role } = req.user as AuthPayload;
-    const userId   = parseInt(sub);
-    const userRole = resolveRole(role);
+    const userId = parseInt(sub);
+    const userRole = Array.isArray(role) ? role[0] : role ?? null;  // ← same fix
 
     const result = await onlineService.confirmOnlinePayment(userId, req.body, userRole);
 
@@ -342,7 +336,6 @@ export async function onlinebookBoatController(req: Request, res: Response) {
     return res.status(err.status || 500).json({ message: err.message || 'Internal server error' });
   }
 }
-
 export async function refundTicketController(req: Request, res: Response) {
   try {
     const user = req.user as AuthPayload;
@@ -461,22 +454,5 @@ export async function getRefundTicketDetailsController(req: Request, res: Respon
   } catch (error) {
     console.error("getRefundTicketDetailsController error:", error);
     res.status(500).json({ message: "Failed to fetch refund details" });
-  }
-}
-
-export async function getSlotCountsController(req: Request, res: Response) {
-  try {
-    const { boatId } = req.params;
-    const date = req.query.date as string | undefined;
-
-    if (!boatId || !date) {
-      return res.status(400).json({ message: "boatId and date query param are required" });
-    }
-
-    const counts = await userService.getSlotCounts(boatId, date);
-    return res.status(200).json(counts);
-  } catch (err: any) {
-    console.error("[getSlotCountsController]", err);
-    return res.status(err.status ?? 500).json({ message: err.message ?? "Internal server error" });
   }
 }

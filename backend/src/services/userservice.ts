@@ -450,23 +450,6 @@ export async function bookBoatdetails(boatID: string) {
 // ─── Slot booking counts (for frontend seat display) ─────────────────────────
 // Returns { "7:00 AM": 3, "9:00 AM": 12 } — active bookings per departure slot
 // for a specific boat + trip date. Frontend uses this to show "X seats left".
-export async function getSlotCounts(
-  boatId: string,
-  tripDate: string
-): Promise<Record<string, number>> {
-  const [rows] = await connection.execute<RowDataPacket[]>(
-    `SELECT
-       JSON_UNQUOTE(JSON_EXTRACT(schedules, '$.departureTime')) AS dep,
-       COUNT(*) AS cnt
-     FROM bookings
-     WHERE fk_booking_boatId = ?
-       AND trip_date = ?
-       AND bookingstatus NOT IN ('cancelled')
-     GROUP BY dep`,
-    [boatId, tripDate]
-  );
-  return Object.fromEntries(rows.map(r => [r.dep, Number(r.cnt)]));
-}
 
 // ─── Physical Booking Transaction ─────────────────────────────────────────────
 //
