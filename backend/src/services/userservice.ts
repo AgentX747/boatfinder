@@ -1,9 +1,9 @@
-import { connection } from "../config/mysql.js";
 import { RowDataPacket } from "mysql2";
-import { invalidateCache, withCache } from "../utils/cache.js";
-import { generateTicketCode } from "../lib/ticketgenerator.js";
+import { connection } from "../config/mysql.js";
 import { hashPassword } from "../lib/passwordhash.js";
+import { generateTicketCode } from "../lib/ticketgenerator.js";
 import { AuthPayload } from "../middleware/authmiddleware.js";
+import { invalidateCache, withCache } from "../utils/cache.js";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 const BOATS_TTL   = 300;
@@ -521,26 +521,62 @@ export async function physicalbookTransaction(
 
   while (true) {
     const ticketCode = generateTicketCode();
+    const conn = await (connection as any).getConnection();
     try {
-      const [result] = await connection.execute(
+      await conn.beginTransaction();
+
+      // ── 1. Lock the boat row and check remaining capacity ─────────────────
+      const [boatRows] = await conn.execute<RowDataPacket[]>(
+        `SELECT capacity_information FROM boats WHERE boat_id = ? FOR UPDATE`,
+        [boatId]
+      );
+
+      if (!boatRows || boatRows.length === 0) {
+        await conn.rollback();
+        conn.release();
+        throw { status: 404, message: "Boat not found" };
+      }
+
+      const boatCapacity = Number(boatRows[0].capacity_information);
+
+      // Count active (non-cancelled) bookings for this boat to derive remaining seats
+      const [countRows] = await conn.execute<RowDataPacket[]>(
+        `SELECT COUNT(*) AS activeBookings
+         FROM bookings
+         WHERE fk_booking_boatId = ?
+           AND bookingstatus NOT IN ('cancelled')`,
+        [boatId]
+      );
+      const activeBookings = Number(countRows[0].activeBookings);
+
+      if (activeBookings >= boatCapacity) {
+        await conn.rollback();
+        conn.release();
+        throw { status: 409, message: "Boat is fully booked" };
+      }
+
+      // ── 2. Insert booking with snapshot of current capacity ───────────────
+      const [result] = await conn.execute(
         `INSERT INTO bookings (
            ticketcode, fk_booking_userId, fk_booking_boatId,
            fk_booking_operatorId, fk_booking_companyId, boatName,
            booking_date, trip_date, route_from, route_to,
-           schedules, payment_method, bookingstatus, boatstatus, total_price
-         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+           schedules, payment_method, bookingstatus, boatstatus,
+           total_price, boatcapacity
+         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           ticketCode || null, userId || null, boatId || null,
           operatorId || null, companyId || null, boatName || null,
           new Date().toISOString().slice(0, 19).replace("T", " "),
           tripDate || null, routeFrom || null, routeTo || null,
           JSON.stringify(schedules), "physical", "pending", "active",
-          ticketPrice || null,
+          ticketPrice || null, boatCapacity,
         ]
       );
       const bookingId = (result as any).insertId;
 
-      await connection.execute(
+      // ── 3. Insert payment record ──────────────────────────────────────────
+      await conn.execute(
         `INSERT INTO payments (payment_method, user_id, booking_id, amount, status, created_at)
          VALUES (?, ?, ?, ?, ?, ?)`,
         [
@@ -550,11 +586,16 @@ export async function physicalbookTransaction(
         ]
       );
 
+      await conn.commit();
+      conn.release();
+
       await invalidateCache(
         `bookings:pending:${userId}`,
         `bookings:history:${userId}`,
         `user:booked:${userId}`,
         `cf:matrix:all`,
+        `boats:all`,
+        `bookboats:${boatId}`,
         `operator:bookings:pending:${operatorId}`,
         `operator:bookings:history:${operatorId}`
       );
@@ -562,11 +603,17 @@ export async function physicalbookTransaction(
       await trackInteraction(userId, Number(boatId), "book");
       await insertLog("BOOK_TICKET", userId, userRole, userAgent);
       return { bookingId, ticketCode };
+
     } catch (err: any) {
-      if (err.code !== "ER_DUP_ENTRY") {
-        await insertLog("BOOK_TICKET_FAILED", userId, userRole, userAgent);
-        throw err;
-      }
+      // Roll back only if the transaction is still open
+      try { await conn.rollback(); } catch (_) {}
+      conn.release();
+
+      // Retry only on duplicate ticket code collisions
+      if (err.code === "ER_DUP_ENTRY") continue;
+
+      await insertLog("BOOK_TICKET_FAILED", userId, userRole, userAgent);
+      throw err;
     }
   }
 }
@@ -642,14 +689,16 @@ export async function cancelBooking(
 ) {
   if (!userID || !bookingId) throw { status: 400, message: "Invalid request" };
 
+  // ── Fetch booking details (operator + boat) before cancelling ─────────────
   const [bookingRows] = await connection.execute<RowDataPacket[]>(
-    `SELECT bo.user_id AS operatorUserId
+    `SELECT bo.user_id AS operatorUserId, b.fk_booking_boatId AS boatId
      FROM bookings b
      JOIN boatoperators bo ON b.fk_booking_operatorId = bo.operator_id
      WHERE b.booking_id = ? AND b.fk_booking_userId = ?`,
     [bookingId, userID]
   );
 
+  // ── Cancel the booking (only if still pending) ────────────────────────────
   const [result]: any = await connection.execute(
     `UPDATE bookings
      SET bookingstatus = 'cancelled'
@@ -666,11 +715,16 @@ export async function cancelBooking(
     `bookings:pending:${userID}`,
     `bookings:history:${userID}`,
   ];
+
   if (bookingRows.length > 0) {
-    const operatorUserId = bookingRows[0].operatorUserId;
+    const { operatorUserId, boatId } = bookingRows[0];
+
     keysToInvalidate.push(
       `operator:bookings:pending:${operatorUserId}`,
-      `operator:bookings:history:${operatorUserId}`
+      `operator:bookings:history:${operatorUserId}`,
+      `boats:all`,
+      `bookboats:${boatId}`,
+      `user:booked:${userID}`
     );
   }
 
