@@ -1,5 +1,5 @@
 'use client';
-import { AlertTriangle, CheckCircle, Clock, X, XCircle } from "lucide-react";
+import { AlertTriangle, CheckCircle, Clock, Users, X, XCircle } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { apiFetch } from "../../utils/apifetch";
@@ -9,7 +9,7 @@ interface BoatData {
   boatName: string;
   image?: string;
   vesselType: string;
-  capacity: string;
+  capacity: string;          // total capacity from boats table
   operatorId: string;
   companyId: string;
   companyName: string;
@@ -41,9 +41,7 @@ function DetailItem({ label, value }: DetailItemProps) {
   );
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Helpers
-// ─────────────────────────────────────────────────────────────────────────────
+// ─── Helpers ──────────────────────────────────────────────────────────────────
 function normalizeClass(raw: string): string {
   const u = (raw ?? "").toUpperCase().trim();
   if (u === "NO-GO" || u === "NOGO" || u === "HIGH" || u === "DANGEROUS") return "NO-GO";
@@ -97,9 +95,7 @@ function isSlotAvailable(
   return false;
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// NO-GO Block Modal
-// ─────────────────────────────────────────────────────────────────────────────
+// ─── NO-GO Block Modal ────────────────────────────────────────────────────────
 interface NoGoBlockModalProps {
   open: boolean;
   onClose: () => void;
@@ -121,8 +117,6 @@ function NoGoBlockModal({ open, onClose, tripDate, shortSummary, fullSummary }: 
     <div className="fixed inset-0 z-[70] flex items-center justify-center p-3 sm:p-6">
       <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={onClose} />
       <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden border border-red-200">
-
-        {/* Header */}
         <div className="bg-gradient-to-r from-red-600 to-red-700 px-5 sm:px-6 py-4 sm:py-5 flex items-start gap-3">
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-2 mb-0.5">
@@ -141,10 +135,7 @@ function NoGoBlockModal({ open, onClose, tripDate, shortSummary, fullSummary }: 
           </button>
         </div>
 
-        {/* Body */}
         <div className="p-5 sm:p-6 space-y-4">
-
-          {/* Badge + date */}
           <div className="flex items-center gap-3 flex-wrap">
             <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full text-sm font-bold bg-red-100 text-red-800 border border-red-200">
               <XCircle className="w-4 h-4" /> NO-GO
@@ -157,7 +148,6 @@ function NoGoBlockModal({ open, onClose, tripDate, shortSummary, fullSummary }: 
             )}
           </div>
 
-          {/* SpotCast reason */}
           <div className="bg-red-50 border border-red-200 rounded-xl p-4 flex items-start gap-3">
             <AlertTriangle className="w-5 h-5 text-red-600 flex-shrink-0 mt-0.5" />
             <div className="space-y-1.5">
@@ -183,7 +173,6 @@ function NoGoBlockModal({ open, onClose, tripDate, shortSummary, fullSummary }: 
             </div>
           </div>
 
-          {/* What this means */}
           <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 space-y-2">
             <p className="text-sm font-semibold text-slate-800">What does this mean?</p>
             <ul className="text-xs text-slate-600 space-y-1.5 list-disc list-inside leading-relaxed">
@@ -196,7 +185,6 @@ function NoGoBlockModal({ open, onClose, tripDate, shortSummary, fullSummary }: 
           <p className="text-xs text-slate-400 text-center">Powered by Sealegs SpotCast AI</p>
         </div>
 
-        {/* Footer */}
         <div className="px-5 sm:px-6 pb-5 sm:pb-6">
           <button
             onClick={onClose}
@@ -210,9 +198,7 @@ function NoGoBlockModal({ open, onClose, tripDate, shortSummary, fullSummary }: 
   );
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Date weather badge (shown inline next to the date input)
-// ─────────────────────────────────────────────────────────────────────────────
+// ─── Date weather badge ───────────────────────────────────────────────────────
 function DateWeatherBadge({ cls }: { cls: string | null }) {
   if (!cls) return null;
   if (cls === "NO-GO") return (
@@ -232,28 +218,50 @@ function DateWeatherBadge({ cls }: { cls: string | null }) {
   );
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Component
-// ─────────────────────────────────────────────────────────────────────────────
+// ─── Seat badge ───────────────────────────────────────────────────────────────
+function SeatBadge({ remaining, capacity }: { remaining: number; capacity: number }) {
+  if (remaining <= 0) return (
+    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-bold bg-red-100 text-red-700 border border-red-200">
+      Full
+    </span>
+  );
+  if (remaining <= Math.ceil(capacity * 0.2)) return (
+    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-bold bg-amber-100 text-amber-700 border border-amber-200">
+      <Users className="w-3 h-3" /> {remaining} left
+    </span>
+  );
+  return (
+    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-bold bg-green-100 text-green-700 border border-green-200">
+      <Users className="w-3 h-3" /> {remaining} left
+    </span>
+  );
+}
+
+// ─── Component ────────────────────────────────────────────────────────────────
 export default function BookBoat() {
   const { boatID } = useParams();
   const navigate   = useNavigate();
 
-  const [bookDetails, setBookDetails]       = useState<BoatData | null>(null);
-  const [tripDate, setTripDate]             = useState<string>("");
+  const [bookDetails, setBookDetails]           = useState<BoatData | null>(null);
+  const [tripDate, setTripDate]                 = useState<string>("");
   const [selectedSchedule, setSelectedSchedule] =
     useState<{ departureTime: string; arrivalTime: string } | null>(null);
 
-  // ── Weather state ─────────────────────────────────────────────────────────
+  // slotCounts: { "7:00 AM": 17, "9:00 AM": 3 }
+  // Key = departureTime, value = number of active bookings for that slot on tripDate
+  const [slotCounts, setSlotCounts]     = useState<Record<string, number>>({});
+  const [slotCountsLoading, setSlotCountsLoading] = useState(false);
+
+  // Weather state
   const [weatherClassifications, setWeatherClassifications] = useState<DayClassification[]>([]);
-  const [weatherLoaded, setWeatherLoaded]   = useState(false);
-  const [noGoModal, setNoGoModal]           = useState<{
+  const [weatherLoaded, setWeatherLoaded] = useState(false);
+  const [noGoModal, setNoGoModal]         = useState<{
     open: boolean; tripDate: string; shortSummary: string; fullSummary: string;
   }>({ open: false, tripDate: "", shortSummary: "", fullSummary: "" });
 
   const todayStr = getTodayStr();
 
-  // ── Derive classification for the currently-selected date ────────────────
+  // ── Derive classification for selected date ───────────────────────────────
   const selectedDateClass: string | null = (() => {
     if (!tripDate || !weatherLoaded) return null;
     const match = weatherClassifications.find(d => d.date === tripDate.slice(0, 10));
@@ -264,6 +272,39 @@ export default function BookBoat() {
     if (!tripDate || !weatherLoaded) return null;
     return weatherClassifications.find(d => d.date === tripDate.slice(0, 10)) ?? null;
   })();
+
+  // ── Capacity helpers ──────────────────────────────────────────────────────
+  const totalCapacity = Number(bookDetails?.capacity ?? 0);
+
+  function getRemainingSeats(slot: { departureTime: string }): number {
+    const booked = slotCounts[slot.departureTime] ?? 0;
+    return Math.max(0, totalCapacity - booked);
+  }
+
+  function isSlotFull(slot: { departureTime: string }): boolean {
+    if (!tripDate || totalCapacity === 0) return false;
+    return getRemainingSeats(slot) <= 0;
+  }
+
+  // ── Fetch slot counts whenever boat or date changes ───────────────────────
+  async function fetchSlotCounts(date: string) {
+    if (!boatID || !date) return;
+    setSlotCountsLoading(true);
+    try {
+      const res = await apiFetch(
+        `https://boatfinder.onrender.com/user/slotcounts/${boatID}?date=${date}`,
+        { method: "GET", credentials: "include" }
+      );
+      if (res.ok) {
+        const data = await res.json();
+        setSlotCounts(data);
+      }
+    } catch (err) {
+      console.error("Failed to fetch slot counts (non-fatal):", err);
+    } finally {
+      setSlotCountsLoading(false);
+    }
+  }
 
   useEffect(() => {
     async function fetchSession() {
@@ -312,14 +353,16 @@ export default function BookBoat() {
     fetchWeather();
   }, [boatID, navigate]);
 
-  // ── Show NO-GO modal immediately when user picks a blocked date ───────────
+  // ── Date change handler ───────────────────────────────────────────────────
   function handleDateChange(newDate: string) {
     setTripDate(newDate);
-    if (selectedSchedule && !isSlotAvailable(newDate, selectedSchedule)) {
-      setSelectedSchedule(null);
+    setSelectedSchedule(null);
+    setSlotCounts({});
+
+    if (newDate) {
+      fetchSlotCounts(newDate);
     }
 
-    // Check weather classification for the new date
     if (newDate && weatherLoaded) {
       const match = weatherClassifications.find(d => d.date === newDate.slice(0, 10));
       if (match && normalizeClass(match.classification) === "NO-GO") {
@@ -333,7 +376,7 @@ export default function BookBoat() {
     }
   }
 
-  // ── Guard: block NO-GO before any booking attempt ─────────────────────────
+  // ── Weather block guard ───────────────────────────────────────────────────
   function checkWeatherBlock(): boolean {
     if (!tripDate) return false;
     const match = weatherClassifications.find(d => d.date === tripDate.slice(0, 10));
@@ -344,11 +387,12 @@ export default function BookBoat() {
         shortSummary: match.short_summary || match.summary,
         fullSummary:  match.summary,
       });
-      return true; // blocked
+      return true;
     }
     return false;
   }
 
+  // ── Booking validation ────────────────────────────────────────────────────
   function validateBooking(): boolean {
     if (!bookDetails) return false;
 
@@ -360,8 +404,6 @@ export default function BookBoat() {
       alert("You cannot book a trip on a past date. Please select today or a future date.");
       return false;
     }
-
-    // ── Weather block check ────────────────────────────────────────────────
     if (checkWeatherBlock()) return false;
 
     if (!selectedSchedule) {
@@ -373,6 +415,13 @@ export default function BookBoat() {
         `The ${selectedSchedule.departureTime} slot has already passed. ` +
         `Please select a future time slot or a different date.`
       );
+      setSelectedSchedule(null);
+      return false;
+    }
+
+    // Guard: slot full check (double-check server will also enforce this)
+    if (isSlotFull(selectedSchedule)) {
+      alert(`The ${selectedSchedule.departureTime} slot is fully booked. Please choose another slot.`);
       setSelectedSchedule(null);
       return false;
     }
@@ -396,6 +445,11 @@ export default function BookBoat() {
         alert("Booking successful!");
         navigate("/userdashboard");
       } else {
+        // Refresh slot counts so the UI reflects reality after a 409
+        if (response.status === 409) {
+          await fetchSlotCounts(tripDate);
+          setSelectedSchedule(null);
+        }
         alert("Booking failed: " + data.message);
       }
     } catch (error) {
@@ -436,7 +490,6 @@ export default function BookBoat() {
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 to-blue-100 flex items-center justify-center p-4">
 
-      {/* NO-GO Block Modal */}
       <NoGoBlockModal
         open={noGoModal.open}
         onClose={() => setNoGoModal(prev => ({ ...prev, open: false }))}
@@ -479,7 +532,14 @@ export default function BookBoat() {
               <DetailItem label="Boat ID"     value={bookDetails?.boatId     || ""} />
               <DetailItem label="Boat Name"   value={bookDetails?.boatName   || ""} />
               <DetailItem label="Vessel Type" value={bookDetails?.vesselType || ""} />
-              <DetailItem label="Capacity"    value={bookDetails?.capacity   || ""} />
+              {/* Capacity — shows total seats from boats table */}
+              <div className="flex flex-col">
+                <span className="text-sm font-medium text-blue-600 mb-1">Total Capacity</span>
+                <span className="text-base text-gray-900 font-semibold flex items-center gap-2">
+                  <Users className="w-4 h-4 text-blue-500" />
+                  {bookDetails?.capacity || "—"} seats
+                </span>
+              </div>
             </div>
           </div>
 
@@ -535,14 +595,12 @@ export default function BookBoat() {
                 }`}
               />
 
-              {/* Weather classification badge */}
               {tripDate && weatherLoaded && (
                 <div className="mt-3 flex items-center gap-2 flex-wrap">
                   <DateWeatherBadge cls={selectedDateClass} />
                 </div>
               )}
 
-              {/* NO-GO inline warning */}
               {isBlocked && selectedDateInfo && (
                 <div className="mt-3 flex items-start gap-2 p-3 rounded-lg bg-red-100 border border-red-300">
                   <XCircle className="w-4 h-4 text-red-600 flex-shrink-0 mt-0.5" />
@@ -568,7 +626,6 @@ export default function BookBoat() {
                 </div>
               )}
 
-              {/* CAUTION inline warning */}
               {selectedDateClass === "CAUTION" && selectedDateInfo && (
                 <div className="mt-3 flex items-start gap-2 p-3 rounded-lg bg-amber-50 border border-amber-300">
                   <AlertTriangle className="w-4 h-4 text-amber-600 flex-shrink-0 mt-0.5" />
@@ -583,7 +640,6 @@ export default function BookBoat() {
                 </div>
               )}
 
-              {/* Today hint */}
               {tripDate && tripDate === todayStr && !isBlocked && (
                 <p className="text-xs text-amber-600 mt-2 font-medium">
                   ⚠ Today is selected — only upcoming time slots are available.
@@ -592,7 +648,7 @@ export default function BookBoat() {
             </div>
           </div>
 
-          {/* Schedule — hidden when date is NO-GO */}
+          {/* Schedule — hidden when NO-GO */}
           {!isBlocked && (
             <div>
               <h2 className="text-xl font-bold text-blue-900 mb-4 flex items-center">
@@ -600,9 +656,18 @@ export default function BookBoat() {
                 Schedule
               </h2>
               <div className="bg-blue-50 p-5 rounded-lg space-y-3">
-                <label className="block text-sm font-medium text-blue-600 mb-2">
-                  Select a departure / arrival time slot <span className="text-red-500">*</span>
-                </label>
+                <div className="flex items-center justify-between mb-2">
+                  <label className="block text-sm font-medium text-blue-600">
+                    Select a departure / arrival time slot <span className="text-red-500">*</span>
+                  </label>
+                  {/* Capacity summary when a date is selected */}
+                  {tripDate && totalCapacity > 0 && (
+                    <span className="text-xs text-blue-500 flex items-center gap-1">
+                      <Users className="w-3.5 h-3.5" />
+                      Total capacity: {totalCapacity} seats
+                    </span>
+                  )}
+                </div>
 
                 {!tripDate && (
                   <p className="text-sm text-slate-500 italic">
@@ -610,7 +675,13 @@ export default function BookBoat() {
                   </p>
                 )}
 
-                {tripDate && bookDetails?.schedules && bookDetails.schedules.length > 0 ? (
+                {slotCountsLoading && tripDate && (
+                  <p className="text-sm text-blue-400 italic animate-pulse">
+                    Loading seat availability…
+                  </p>
+                )}
+
+                {tripDate && !slotCountsLoading && bookDetails?.schedules && bookDetails.schedules.length > 0 ? (
                   (() => {
                     const available = bookDetails.schedules.filter(s => isSlotAvailable(tripDate, s));
                     const past      = bookDetails.schedules.filter(s => !isSlotAvailable(tripDate, s));
@@ -621,15 +692,21 @@ export default function BookBoat() {
                           const isSelected =
                             selectedSchedule?.departureTime === slot.departureTime &&
                             selectedSchedule?.arrivalTime   === slot.arrivalTime;
+                          const full      = isSlotFull(slot);
+                          const remaining = getRemainingSeats(slot);
+
                           return (
                             <button
                               key={`avail-${index}`}
                               type="button"
-                              onClick={() => setSelectedSchedule(slot)}
-                              className={`w-full px-5 py-3 rounded-lg border-2 transition text-sm cursor-pointer
-                                ${isSelected
-                                  ? "border-blue-600 bg-blue-100 text-blue-900 font-medium"
-                                  : "border-gray-200 bg-white text-gray-700 hover:border-blue-400 hover:bg-blue-50"
+                              disabled={full}
+                              onClick={() => !full && setSelectedSchedule(slot)}
+                              className={`w-full px-5 py-3 rounded-lg border-2 transition text-sm
+                                ${full
+                                  ? "border-red-200 bg-red-50 text-red-400 cursor-not-allowed opacity-80"
+                                  : isSelected
+                                    ? "border-blue-600 bg-blue-100 text-blue-900 font-medium cursor-pointer"
+                                    : "border-gray-200 bg-white text-gray-700 hover:border-blue-400 hover:bg-blue-50 cursor-pointer"
                                 }`}
                             >
                               <div className="flex items-center justify-between gap-4">
@@ -643,9 +720,13 @@ export default function BookBoat() {
                                     <p className="font-semibold">{slot.arrivalTime}</p>
                                   </div>
                                 </div>
-                                {isSelected && (
-                                  <span className="text-blue-600 font-bold text-lg">✓</span>
-                                )}
+                                <div className="flex items-center gap-2 flex-shrink-0">
+                                  {/* Seats remaining badge */}
+                                  <SeatBadge remaining={remaining} capacity={totalCapacity} />
+                                  {isSelected && !full && (
+                                    <span className="text-blue-600 font-bold text-lg">✓</span>
+                                  )}
+                                </div>
                               </div>
                             </button>
                           );
@@ -688,7 +769,7 @@ export default function BookBoat() {
                     );
                   })()
                 ) : (
-                  tripDate && (
+                  tripDate && !slotCountsLoading && (
                     <p className="text-gray-500 text-sm">No schedules available.</p>
                   )
                 )}
@@ -710,7 +791,7 @@ export default function BookBoat() {
             </div>
           </div>
 
-          {/* Booking Method — replaced with blocked panel when NO-GO */}
+          {/* Booking Method */}
           {isBlocked ? (
             <div className="bg-red-50 border-2 border-red-200 rounded-xl p-6 flex flex-col items-center text-center gap-4">
               <div className="w-14 h-14 rounded-full bg-red-100 flex items-center justify-center">
@@ -744,7 +825,6 @@ export default function BookBoat() {
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
 
-                {/* Physical Ticket */}
                 <div
                   className="border-2 border-gray-300 rounded-lg p-4 hover:border-blue-600 hover:bg-white transition cursor-pointer"
                   onClick={onPhysicalBook}
@@ -767,7 +847,6 @@ export default function BookBoat() {
                   </button>
                 </div>
 
-                {/* Online Booking */}
                 <div
                   className="border-2 border-green-400 rounded-lg p-4 bg-green-50 hover:bg-green-100 transition cursor-pointer"
                   onClick={onOnlineBook}

@@ -1,12 +1,8 @@
 import { Request, Response } from 'express';
-import { JwtPayload } from 'jsonwebtoken';
-import { AuthPayload } from '../middleware/authmiddleware.js'
-import { RowDataPacket } from 'mysql2';
-import { connection } from "../config/mysql.js";
+import { AuthPayload } from '../middleware/authmiddleware.js';
 import * as userService from "../services/userservice.js";
-import { hashPassword, verifyPassword } from "../lib/passwordhash.js";
+
 import * as onlineService from "../services/onlinepaymentservice.js";
-import { searchrouteandtime } from '../services/userservice.js';
 
 export async function searchBoatsController(req: Request, res: Response) {
   try {
@@ -460,5 +456,21 @@ export async function getRefundTicketDetailsController(req: Request, res: Respon
   } catch (error) {
     console.error("getRefundTicketDetailsController error:", error);
     res.status(500).json({ message: "Failed to fetch refund details" });
+  }
+}
+export async function getSlotCountsController(req: Request, res: Response) {
+  try {
+    const { boatId } = req.params;
+    const { date }   = req.query;
+
+    if (!boatId || !date || typeof date !== "string") {
+      return res.status(400).json({ message: "boatId and date query param are required" });
+    }
+
+    const counts = await userService.getSlotCounts(boatId, date);  // ← was: getSlotCounts (not imported)
+    return res.status(200).json(counts);
+  } catch (err: any) {
+    console.error("[getSlotCountsController]", err);
+    return res.status(err.status ?? 500).json({ message: err.message ?? "Internal server error" });
   }
 }

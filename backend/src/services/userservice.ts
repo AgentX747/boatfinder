@@ -1,4 +1,5 @@
 import { RowDataPacket } from "mysql2";
+import type { PoolConnection } from "mysql2/promise";
 import { connection } from "../config/mysql.js";
 import { hashPassword } from "../lib/passwordhash.js";
 import { generateTicketCode } from "../lib/ticketgenerator.js";
@@ -12,22 +13,16 @@ const HISTORY_TTL = 120;
 const PROFILE_TTL = 300;
 const MATRIX_TTL  = 120;
 
-// Soft penalties — suppress already-seen boats rather than hiding them
 const REPEAT_INTERACTION_PENALTY = 0.40;
 const BOOKED_PENALTY             = 0.12;
 const DECAY_HALF_LIFE_DAYS       = 30;
-
-// Minimum cosine similarity to consider a neighbour relevant
-const MIN_SIMILARITY = 0.10;
-
-// How many nearest neighbours to use (keeps CF focused)
-const MAX_NEIGHBOURS = 50;
+const MIN_SIMILARITY             = 0.10;
+const MAX_NEIGHBOURS             = 50;
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 export type InteractionType = "book" | "click" | "search";
 
-// Normalised per-user vector: boat_id → score ∈ [0, 1]
-type UserVector = Record<string, number>;
+type UserVector     = Record<string, number>;
 type UserBoatMatrix = Record<string, UserVector>;
 
 interface BoatRow extends RowDataPacket {
@@ -74,11 +69,7 @@ async function insertLog(
 }
 
 // ─── Cosine similarity ────────────────────────────────────────────────────────
-// Both vectors are already L2-normalised so this is simply the dot product.
-function cosineSimilarity(
-  vecA: UserVector,
-  vecB: UserVector
-): number {
+function cosineSimilarity(vecA: UserVector, vecB: UserVector): number {
   let dot = 0, magA = 0, magB = 0;
   for (const key in vecA) {
     magA += vecA[key] * vecA[key];
@@ -97,9 +88,7 @@ function decayWeight(createdAt: Date | string | null): number {
   return Math.pow(0.5, ageDays / DECAY_HALF_LIFE_DAYS);
 }
 
-// ─── L2 normalise a raw score vector ─────────────────────────────────────────
-// Prevents power-users (100s of clicks) from dominating neighbourhood scores.
-// After normalisation every user vector has magnitude 1.
+// ─── L2 normalise ─────────────────────────────────────────────────────────────
 function l2Normalise(raw: Record<string, number>): UserVector {
   let mag = 0;
   for (const k in raw) mag += raw[k] * raw[k];
@@ -139,9 +128,7 @@ export async function trackInteraction(
   type:        InteractionType,
   routeQuery?: string
 ): Promise<void> {
-  // Skip boatId 0 — route-only searches have no meaningful boat target
   if (!boatId || boatId === 0) return;
-
   try {
     await connection.execute(
       `INSERT INTO user_interactions (user_id, boat_id, interaction_type, route_query)
@@ -158,29 +145,22 @@ export async function trackInteraction(
   }
 }
 
-// ─── Build global user-boat matrix (CACHED, L2-normalised) ───────────────────
-//
-// Each row is a *normalised* preference vector for one user so that a user
-// with 200 clicks and a user with 4 clicks contribute equally to similarity
-// comparisons — only the *pattern* of preferences matters, not the volume.
-//
+// ─── Build global user-boat matrix ───────────────────────────────────────────
 async function buildDecayedMatrix(): Promise<{
   matrix:        UserBoatMatrix;
-  rawPopularity: Record<string, number>;  // unnormalised, for cold-start ranking
-  validBoatIds:  Set<string>;             // only IDs present in the active boats table
+  rawPopularity: Record<string, number>;
+  validBoatIds:  Set<string>;
 }> {
   return withCache("cf:matrix:all", MATRIX_TTL, async () => {
-    // Fetch all active boat IDs so we can filter stale references
     const [boatIdRows] = await connection.execute<RowDataPacket[]>(
       `SELECT boat_id FROM boats
        WHERE registration_status = 'verified' AND status = 'active'`
     );
     const validBoatIds = new Set<string>(boatIdRows.map(r => String(r.boat_id)));
 
-    const rawMatrix:    Record<string, Record<string, number>> = {};
-    const rawPopularity: Record<string, number>                = {};
+    const rawMatrix:     Record<string, Record<string, number>> = {};
+    const rawPopularity: Record<string, number>                 = {};
 
-    // 1. Accepted/completed bookings — strongest signal, no decay
     const [bookingRows] = await connection.execute<RowDataPacket[]>(
       `SELECT fk_booking_userId AS user_id, fk_booking_boatId AS boat_id
        FROM bookings
@@ -192,14 +172,12 @@ async function buildDecayedMatrix(): Promise<{
     for (const row of bookingRows) {
       const uid = String(row.user_id);
       const bid = String(row.boat_id);
-      if (!validBoatIds.has(bid)) continue;          // skip deleted/inactive boats
-
+      if (!validBoatIds.has(bid)) continue;
       if (!rawMatrix[uid]) rawMatrix[uid] = {};
-      rawMatrix[uid][bid]   = (rawMatrix[uid][bid]   ?? 0) + INTERACTION_WEIGHTS.book;
-      rawPopularity[bid]    = (rawPopularity[bid]    ?? 0) + INTERACTION_WEIGHTS.book;
+      rawMatrix[uid][bid]  = (rawMatrix[uid][bid]  ?? 0) + INTERACTION_WEIGHTS.book;
+      rawPopularity[bid]   = (rawPopularity[bid]   ?? 0) + INTERACTION_WEIGHTS.book;
     }
 
-    // 2. Click / search interactions — lighter signal, time-decayed
     const [interactionRows] = await connection.execute<RowDataPacket[]>(
       `SELECT user_id, boat_id, interaction_type, created_at
        FROM user_interactions
@@ -210,16 +188,13 @@ async function buildDecayedMatrix(): Promise<{
       const uid    = String(row.user_id);
       const bid    = String(row.boat_id);
       if (!validBoatIds.has(bid)) continue;
-
       const base   = INTERACTION_WEIGHTS[row.interaction_type as InteractionType] ?? 0;
       const weight = base * decayWeight(row.created_at);
-
       if (!rawMatrix[uid]) rawMatrix[uid] = {};
       rawMatrix[uid][bid]  = (rawMatrix[uid][bid]  ?? 0) + weight;
       rawPopularity[bid]   = (rawPopularity[bid]   ?? 0) + weight;
     }
 
-    // 3. L2-normalise every user vector so magnitude ≠ interaction count
     const matrix: UserBoatMatrix = {};
     for (const uid in rawMatrix) {
       matrix[uid] = l2Normalise(rawMatrix[uid]);
@@ -230,22 +205,10 @@ async function buildDecayedMatrix(): Promise<{
 }
 
 // ─── Weighted + decay CF recommendations ─────────────────────────────────────
-//
-//  Algorithm (item-based-neighbour CF with popularity fallback):
-//
-//  1. Build L2-normalised user vectors from bookings + decayed interactions.
-//  2. Compute cosine similarity between the target user and every other user.
-//  3. Keep only neighbours with similarity ≥ MIN_SIMILARITY (cuts noise).
-//  4. Cap at MAX_NEIGHBOURS nearest neighbours (prevents long-tail dilution).
-//  5. Weighted-average boat scores across neighbours: score[b] = Σ sim·vec[b].
-//  6. Apply soft penalties to suppress (not hide) already-seen boats.
-//  7. Fill remaining slots from global popularity when CF list is short.
-//
 export async function getRecommendedBoatsWeighted(
   userId: string,
   limit  = 6
 ): Promise<BoatRow[]> {
-
   const [{ matrix, rawPopularity, validBoatIds }, allBoats, bookedBoatIds] =
     await Promise.all([
       buildDecayedMatrix(),
@@ -263,7 +226,6 @@ export async function getRecommendedBoatsWeighted(
       }),
     ]);
 
-  // Index boats by ID for fast lookup; only include active+valid boats
   const boatMap = new Map<string, BoatRow>(
     (allBoats as BoatRow[])
       .filter(b => validBoatIds.has(String(b.boat_id)))
@@ -274,9 +236,6 @@ export async function getRecommendedBoatsWeighted(
   const interactedByUser = new Set(Object.keys(currentVec));
   const hasHistory       = interactedByUser.size > 0;
 
-  // ── Cold start: user has no interaction history ───────────────────────────
-  // Rank by global popularity (total weighted interactions), excluding nothing —
-  // a new user should see the most popular boats unconditionally.
   if (!hasHistory) {
     return (allBoats as BoatRow[])
       .filter(b => validBoatIds.has(String(b.boat_id)))
@@ -285,35 +244,23 @@ export async function getRecommendedBoatsWeighted(
       .slice(0, limit);
   }
 
-  // ── Step 1: find neighbours sorted by descending similarity ──────────────
   const neighbours: Array<{ uid: string; sim: number }> = [];
-
   for (const otherUid in matrix) {
     if (otherUid === userId) continue;
     const sim = cosineSimilarity(currentVec, matrix[otherUid]);
-    if (sim >= MIN_SIMILARITY) {
-      neighbours.push({ uid: otherUid, sim });
-    }
+    if (sim >= MIN_SIMILARITY) neighbours.push({ uid: otherUid, sim });
   }
-
-  // Sort descending and take only the top-K nearest neighbours
   neighbours.sort((a, b) => b.sim - a.sim);
   const topNeighbours = neighbours.slice(0, MAX_NEIGHBOURS);
 
-  // ── Step 2: aggregate boat scores from neighbours ─────────────────────────
-  // score[boat] = Σ (similarity × neighbour's normalised preference for that boat)
-  // Using the *normalised* neighbour vector means we're measuring pattern match,
-  // not raw click volume.
   const boatScore: Record<string, number> = {};
-
   for (const { uid, sim } of topNeighbours) {
     for (const bid in matrix[uid]) {
-      if (!boatMap.has(bid)) continue;       // boat no longer active
+      if (!boatMap.has(bid)) continue;
       boatScore[bid] = (boatScore[bid] ?? 0) + sim * matrix[uid][bid];
     }
   }
 
-  // ── No neighbours at all → full popularity fallback ──────────────────────
   if (topNeighbours.length === 0) {
     return (allBoats as BoatRow[])
       .filter(b => {
@@ -325,7 +272,6 @@ export async function getRecommendedBoatsWeighted(
       .slice(0, limit);
   }
 
-  // ── Step 3: apply soft penalties, rank, slice ─────────────────────────────
   const penaltyFor = (bid: string): number => {
     if ((bookedBoatIds as Set<string>).has(bid)) return BOOKED_PENALTY;
     if (interactedByUser.has(bid))               return REPEAT_INTERACTION_PENALTY;
@@ -334,45 +280,39 @@ export async function getRecommendedBoatsWeighted(
 
   const scored: ScoredBoatRow[] = Array.from(boatMap.values())
     .map((boat): ScoredBoatRow | undefined => {
-      const bid = String(boat.boat_id);
-      // Only include boats that appeared in CF scores OR the current user's
-      // own history (penalised). Boats with no CF signal AND no user history
-      // go to the popularity fill step below.
+      const bid     = String(boat.boat_id);
       const cfScore = boatScore[bid];
       if (cfScore === undefined && !interactedByUser.has(bid) && !(bookedBoatIds as Set<string>).has(bid)) {
         return undefined;
       }
-      const rawScore = cfScore ?? 0;
-      return { ...boat, score: rawScore * penaltyFor(bid) };
+      return { ...boat, score: (cfScore ?? 0) * penaltyFor(bid) };
     })
     .filter((b): b is ScoredBoatRow => b !== undefined)
     .sort((a, b) => b.score - a.score)
     .slice(0, limit);
 
-  // ── Step 4: popularity fill when CF list is shorter than limit ────────────
   if (scored.length < limit) {
     const scoredIds = new Set(scored.map(b => String(b.boat_id)));
-    const popular = (allBoats as BoatRow[])
+    const popular   = (allBoats as BoatRow[])
       .filter(b => {
         const bid = String(b.boat_id);
         return (
           validBoatIds.has(bid) &&
           !scoredIds.has(bid) &&
           !(bookedBoatIds as Set<string>).has(bid) &&
-          !interactedByUser.has(bid)           // don't double-show penalised boats
+          !interactedByUser.has(bid)
         );
       })
       .map(b => ({ ...b, score: rawPopularity[String(b.boat_id)] ?? 0 }))
       .sort((a, b) => (b.score ?? 0) - (a.score ?? 0))
       .slice(0, limit - scored.length);
-
     return [...scored, ...popular];
   }
 
   return scored;
 }
 
-// ─── Legacy CF (booking-only, kept for backwards compat) ─────────────────────
+// ─── Legacy CF ────────────────────────────────────────────────────────────────
 async function buildUserBoatMatrix(): Promise<Record<string, Record<string, number>>> {
   const [rows] = await connection.execute<RowDataPacket[]>(
     `SELECT fk_booking_userId AS user_id, fk_booking_boatId AS boat_id
@@ -428,7 +368,7 @@ export async function getRecommendedBoats(userId: string, limit = 6): Promise<Bo
 
   if (scored.length < limit) {
     const scoredIds = new Set(scored.map(b => String(b.boat_id)));
-    const popular = (allBoats as BoatRow[])
+    const popular   = (allBoats as BoatRow[])
       .filter(b => !scoredIds.has(String(b.boat_id)) && !currentUserVec[String(b.boat_id)])
       .map(b => ({ ...b, bookingCount: popularityMap[String(b.boat_id)] ?? 0 }))
       .sort((a, b) => (b.bookingCount ?? 0) - (a.bookingCount ?? 0))
@@ -440,7 +380,6 @@ export async function getRecommendedBoats(userId: string, limit = 6): Promise<Bo
 }
 
 // ─── Search ───────────────────────────────────────────────────────────────────
-
 export async function searchrouteandtime(query: any = {}) {
   const routeFrom     = query.routeFrom     ?? null;
   const routeTo       = query.routeTo       ?? null;
@@ -508,6 +447,39 @@ export async function bookBoatdetails(boatID: string) {
   });
 }
 
+// ─── Slot booking counts (for frontend seat display) ─────────────────────────
+// Returns { "7:00 AM": 3, "9:00 AM": 12 } — active bookings per departure slot
+// for a specific boat + trip date. Frontend uses this to show "X seats left".
+export async function getSlotCounts(
+  boatId: string,
+  tripDate: string
+): Promise<Record<string, number>> {
+  const [rows] = await connection.execute<RowDataPacket[]>(
+    `SELECT
+       JSON_UNQUOTE(JSON_EXTRACT(schedules, '$.departureTime')) AS dep,
+       COUNT(*) AS cnt
+     FROM bookings
+     WHERE fk_booking_boatId = ?
+       AND trip_date = ?
+       AND bookingstatus NOT IN ('cancelled')
+     GROUP BY dep`,
+    [boatId, tripDate]
+  );
+  return Object.fromEntries(rows.map(r => [r.dep, Number(r.cnt)]));
+}
+
+// ─── Physical Booking Transaction ─────────────────────────────────────────────
+//
+//  Capacity logic:
+//  1. Lock the boat row (FOR UPDATE) and read capacity_information from boats table.
+//  2. Count active bookings for this boat WHERE trip_date = ? AND departure slot = ?.
+//     This gives per-slot occupancy — not global across all dates/times.
+//  3. If slot is full → 409. Otherwise insert booking with boatcapacity snapshot.
+//
+//  The bookings.boatcapacity column stores the total capacity at the time of
+//  booking (snapshot). It does NOT change. Per-slot occupancy is always derived
+//  live from COUNT(*) so it stays accurate across concurrent requests.
+//
 export async function physicalbookTransaction(
   userId:    number,
   body:      any,
@@ -519,17 +491,23 @@ export async function physicalbookTransaction(
     schedules, ticketPrice, boatName, tripDate,
   } = body;
 
+  // schedules arriving from the frontend is the selected slot object:
+  // { departureTime: "7:00 AM", arrivalTime: "8:00 AM" }
+  const departureTime: string = schedules?.departureTime ?? "";
+  const arrivalTime:   string = schedules?.arrivalTime   ?? "";
+
   while (true) {
     const ticketCode = generateTicketCode();
-    const conn = await (connection as any).getConnection();
+    const conn = await (connection as any).getConnection() as PoolConnection;
+
     try {
       await conn.beginTransaction();
 
-      // ── 1. Lock the boat row and check remaining capacity ─────────────────
-      const [boatRows] = await conn.execute<RowDataPacket[]>(
+      // ── 1. Lock boat row, read capacity from source of truth ──────────────
+      const [boatRows] = await conn.execute(
         `SELECT capacity_information FROM boats WHERE boat_id = ? FOR UPDATE`,
         [boatId]
-      );
+      ) as [RowDataPacket[], any];
 
       if (!boatRows || boatRows.length === 0) {
         await conn.rollback();
@@ -539,23 +517,33 @@ export async function physicalbookTransaction(
 
       const boatCapacity = Number(boatRows[0].capacity_information);
 
-      // Count active (non-cancelled) bookings for this boat to derive remaining seats
-      const [countRows] = await conn.execute<RowDataPacket[]>(
+      // ── 2. Count active bookings for this specific date + slot ────────────
+      //    JSON_UNQUOTE + JSON_EXTRACT reads the departureTime field from the
+      //    stored JSON column so we match exactly the slot the user selected.
+      const [countRows] = await conn.execute(
         `SELECT COUNT(*) AS activeBookings
          FROM bookings
          WHERE fk_booking_boatId = ?
+           AND trip_date = ?
+           AND JSON_UNQUOTE(JSON_EXTRACT(schedules, '$.departureTime')) = ?
            AND bookingstatus NOT IN ('cancelled')`,
-        [boatId]
-      );
+        [boatId, tripDate, departureTime]
+      ) as [RowDataPacket[], any];
+
       const activeBookings = Number(countRows[0].activeBookings);
 
       if (activeBookings >= boatCapacity) {
         await conn.rollback();
         conn.release();
-        throw { status: 409, message: "Boat is fully booked" };
+        throw {
+          status: 409,
+          message: `This slot (${departureTime} → ${arrivalTime}) is fully booked`,
+        };
       }
 
-      // ── 2. Insert booking with snapshot of current capacity ───────────────
+      const remainingSeats = boatCapacity - activeBookings; // informational only
+
+      // ── 3. Insert booking — boatcapacity is a snapshot of total capacity ──
       const [result] = await conn.execute(
         `INSERT INTO bookings (
            ticketcode, fk_booking_userId, fk_booking_boatId,
@@ -565,23 +553,36 @@ export async function physicalbookTransaction(
            total_price, boatcapacity
          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
-          ticketCode || null, userId || null, boatId || null,
-          operatorId || null, companyId || null, boatName || null,
+          ticketCode   || null,
+          userId       || null,
+          boatId       || null,
+          operatorId   || null,
+          companyId    || null,
+          boatName     || null,
           new Date().toISOString().slice(0, 19).replace("T", " "),
-          tripDate || null, routeFrom || null, routeTo || null,
-          JSON.stringify(schedules), "physical", "pending", "active",
-          ticketPrice || null, boatCapacity,
+          tripDate     || null,
+          routeFrom    || null,
+          routeTo      || null,
+          JSON.stringify(schedules),   // stores { departureTime, arrivalTime }
+          "physical",
+          "pending",
+          "active",
+          ticketPrice  || null,
+          boatCapacity,                // snapshot from boats.capacity_information
         ]
       );
       const bookingId = (result as any).insertId;
 
-      // ── 3. Insert payment record ──────────────────────────────────────────
+      // ── 4. Insert payment record ──────────────────────────────────────────
       await conn.execute(
         `INSERT INTO payments (payment_method, user_id, booking_id, amount, status, created_at)
          VALUES (?, ?, ?, ?, ?, ?)`,
         [
-          "physical", String(userId), String(bookingId),
-          Number(ticketPrice) || 0, "pending",
+          "physical",
+          String(userId),
+          String(bookingId),
+          Number(ticketPrice) || 0,
+          "pending",
           new Date().toISOString().slice(0, 19).replace("T", " "),
         ]
       );
@@ -602,22 +603,20 @@ export async function physicalbookTransaction(
 
       await trackInteraction(userId, Number(boatId), "book");
       await insertLog("BOOK_TICKET", userId, userRole, userAgent);
-      return { bookingId, ticketCode };
+
+      return { bookingId, ticketCode, remainingSeats: remainingSeats - 1 };
 
     } catch (err: any) {
-      // Roll back only if the transaction is still open
       try { await conn.rollback(); } catch (_) {}
       conn.release();
-
-      // Retry only on duplicate ticket code collisions
       if (err.code === "ER_DUP_ENTRY") continue;
-
       await insertLog("BOOK_TICKET_FAILED", userId, userRole, userAgent);
       throw err;
     }
   }
 }
 
+// ─── Pending Bookings ─────────────────────────────────────────────────────────
 export async function getPendingBookings(userID: number) {
   return withCache(`bookings:pending:${userID}`, BOOKING_TTL, async () => {
     const [rows] = await connection.execute<RowDataPacket[]>(
@@ -638,6 +637,7 @@ export async function getPendingBookings(userID: number) {
   });
 }
 
+// ─── Accepted Bookings ────────────────────────────────────────────────────────
 export async function getAcceptedBookings(userID: number) {
   return withCache(`bookings:accepted:${userID}`, BOOKING_TTL, async () => {
     const [rows] = await connection.execute<RowDataPacket[]>(
@@ -658,6 +658,7 @@ export async function getAcceptedBookings(userID: number) {
   });
 }
 
+// ─── Current Booking Details ──────────────────────────────────────────────────
 export async function getCurrentBookingDetails(userID: number, bookingId: string) {
   const [rows] = await connection.execute<RowDataPacket[]>(
     `SELECT
@@ -681,6 +682,7 @@ export async function getCurrentBookingDetails(userID: number, bookingId: string
   return { ...row, schedules: Array.isArray(parsed) ? (parsed[0] ?? null) : parsed };
 }
 
+// ─── Cancel Booking ───────────────────────────────────────────────────────────
 export async function cancelBooking(
   userID:    number,
   bookingId: number,
@@ -689,7 +691,6 @@ export async function cancelBooking(
 ) {
   if (!userID || !bookingId) throw { status: 400, message: "Invalid request" };
 
-  // ── Fetch booking details (operator + boat) before cancelling ─────────────
   const [bookingRows] = await connection.execute<RowDataPacket[]>(
     `SELECT bo.user_id AS operatorUserId, b.fk_booking_boatId AS boatId
      FROM bookings b
@@ -698,7 +699,6 @@ export async function cancelBooking(
     [bookingId, userID]
   );
 
-  // ── Cancel the booking (only if still pending) ────────────────────────────
   const [result]: any = await connection.execute(
     `UPDATE bookings
      SET bookingstatus = 'cancelled'
@@ -718,7 +718,6 @@ export async function cancelBooking(
 
   if (bookingRows.length > 0) {
     const { operatorUserId, boatId } = bookingRows[0];
-
     keysToInvalidate.push(
       `operator:bookings:pending:${operatorUserId}`,
       `operator:bookings:history:${operatorUserId}`,
@@ -733,6 +732,7 @@ export async function cancelBooking(
   return { bookingId, status: "cancelled" };
 }
 
+// ─── Booking History ──────────────────────────────────────────────────────────
 export async function getBookingHistory(userID: number) {
   return withCache(`bookings:history:${userID}`, HISTORY_TTL, async () => {
     const [rows]: any = await connection.query(
@@ -755,6 +755,7 @@ export async function getBookingHistory(userID: number) {
   });
 }
 
+// ─── User Profile ─────────────────────────────────────────────────────────────
 export async function userCurrentDetails(userID: number) {
   return withCache(`user:profile:${userID}`, PROFILE_TTL, async () => {
     const [rows] = await connection.execute<RowDataPacket[]>(
@@ -805,6 +806,7 @@ export async function confirmEditUser(body: {
   }
 }
 
+// ─── Support & Refund ─────────────────────────────────────────────────────────
 export async function submitTicket(body: any, userId: number) {
   const [rows] = await connection.execute(
     `INSERT INTO support_ticket (fk_support_userId, ticketSubject, detailedDescription, status)
