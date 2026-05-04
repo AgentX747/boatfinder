@@ -157,11 +157,22 @@ export async function getOperatorPendingBookings(user: AuthPayload) {
         b.total_price AS ticketPrice,
         b.bookingstatus,
         b.boatstatus,
-        b.fk_booking_userId AS passengerId
+        b.fk_booking_userId AS passengerId,
+        bt.capacity_information AS totalCapacity,
+        (
+          SELECT COUNT(*)
+          FROM bookings b2
+          WHERE b2.fk_booking_boatId = b.fk_booking_boatId
+            AND b2.trip_date = b.trip_date
+            AND JSON_UNQUOTE(JSON_EXTRACT(b2.schedules, '$.departureTime'))
+              = JSON_UNQUOTE(JSON_EXTRACT(b.schedules, '$.departureTime'))
+            AND b2.bookingstatus = 'accepted'
+        ) AS acceptedCount
        FROM bookings b
        INNER JOIN boatoperators o ON b.fk_booking_operatorId = o.operator_id
        INNER JOIN users u         ON b.fk_booking_userId = u.user_id
-       LEFT JOIN companies c      ON b.fk_booking_companyId = c.company_id
+       LEFT  JOIN companies c     ON b.fk_booking_companyId = c.company_id
+       INNER JOIN boats bt        ON b.fk_booking_boatId = bt.boat_id
        WHERE o.user_id = ? AND b.bookingstatus = 'pending'
        ORDER BY b.booking_id DESC`,
       [Number(sub)]
@@ -172,11 +183,13 @@ export async function getOperatorPendingBookings(user: AuthPayload) {
       schedules: typeof row.schedules === "string"
         ? JSON.parse(row.schedules)
         : row.schedules ?? null,
+      totalCapacity:  Number(row.totalCapacity),
+      acceptedCount:  Number(row.acceptedCount),
+      remainingSeats: Math.max(0, Number(row.totalCapacity) - Number(row.acceptedCount)),
     }));
   });
 }
 
-// ─── GET OPERATOR ACCEPTED BOOKINGS ──────────────────────────────────────────
 export async function getOperatorAcceptedBookings(user: AuthPayload) {
   const { sub } = user;
 
@@ -198,11 +211,22 @@ export async function getOperatorAcceptedBookings(user: AuthPayload) {
         b.total_price AS ticketPrice,
         b.bookingstatus,
         b.boatstatus,
-        b.fk_booking_userId AS passengerId
+        b.fk_booking_userId AS passengerId,
+        bt.capacity_information AS totalCapacity,
+        (
+          SELECT COUNT(*)
+          FROM bookings b2
+          WHERE b2.fk_booking_boatId = b.fk_booking_boatId
+            AND b2.trip_date = b.trip_date
+            AND JSON_UNQUOTE(JSON_EXTRACT(b2.schedules, '$.departureTime'))
+              = JSON_UNQUOTE(JSON_EXTRACT(b.schedules, '$.departureTime'))
+            AND b2.bookingstatus = 'accepted'
+        ) AS acceptedCount
        FROM bookings b
        INNER JOIN boatoperators o ON b.fk_booking_operatorId = o.operator_id
        INNER JOIN users u         ON b.fk_booking_userId = u.user_id
-       LEFT JOIN companies c      ON b.fk_booking_companyId = c.company_id
+       LEFT  JOIN companies c     ON b.fk_booking_companyId = c.company_id
+       INNER JOIN boats bt        ON b.fk_booking_boatId = bt.boat_id
        WHERE o.user_id = ? AND b.bookingstatus = 'accepted'
        ORDER BY b.booking_id DESC`,
       [Number(sub)]
@@ -213,10 +237,12 @@ export async function getOperatorAcceptedBookings(user: AuthPayload) {
       schedules: typeof row.schedules === "string"
         ? JSON.parse(row.schedules)
         : row.schedules ?? null,
+      totalCapacity:  Number(row.totalCapacity),
+      acceptedCount:  Number(row.acceptedCount),
+      remainingSeats: Math.max(0, Number(row.totalCapacity) - Number(row.acceptedCount)),
     }));
   });
 }
-
 // ─── GET OPERATOR BOOKING HISTORY ─────────────────────────────────────────────
 export async function getOperatorBookingHistory(user: AuthPayload) {
   const { sub } = user;

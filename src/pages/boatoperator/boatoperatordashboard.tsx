@@ -541,14 +541,57 @@ export default function BoatOperatorDashboard() {
               </div>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3 sm:gap-4">
                 {bookingsActiveTab === "pending" && filteredPendingBookings.map((booking) => (
-                  <ViewBookingsCard key={booking.bookingId} bookingId={booking.bookingId} ticketcode={booking.ticketcode} boatId={booking.boatId ?? "—"} boatName={booking.boatName ?? "—"} operatorId={boatOperatorLoggedIn?.boatOperatorId ?? "—"} companyName={booking.companyName ?? "—"} passengerName={booking.passengerName ?? "—"} bookingDate={booking.bookingDate} tripDate={booking.tripDate} paymentMethod={booking.paymentMethod ?? "—"} routeFrom={booking.routeFrom ?? "—"} routeTo={booking.routeTo ?? "—"} totalPrice={booking.ticketPrice ?? 0} status={booking.bookingstatus} schedules={booking.schedules ?? null} boatStatus={booking.boatStatus ?? "active"} image={booking.image ?? ""}
-                    acceptPendingBookings={() => handleAcceptBooking(booking)} declinePendingBookings={() => { setSelectedBooking(booking); setDeclineModalOpen(true); }} />
+                 <ViewBookingsCard
+  key={booking.bookingId}
+  bookingId={booking.bookingId}
+  ticketcode={booking.ticketcode}
+  boatId={booking.boatId ?? "—"}
+  boatName={booking.boatName ?? "—"}
+  operatorId={boatOperatorLoggedIn?.boatOperatorId ?? "—"}
+  companyName={booking.companyName ?? "—"}
+  passengerName={booking.passengerName ?? "—"}
+  bookingDate={booking.bookingDate}
+  tripDate={booking.tripDate}
+  paymentMethod={booking.paymentMethod ?? "—"}
+  routeFrom={booking.routeFrom ?? "—"}
+  routeTo={booking.routeTo ?? "—"}
+  totalPrice={booking.ticketPrice ?? 0}
+  status={booking.bookingstatus}
+  schedules={booking.schedules ?? null}
+  boatStatus={booking.boatStatus ?? "active"}
+  image={booking.image ?? ""}
+  remainingSeats={booking.remainingSeats}   // ← new
+  totalCapacity={booking.totalCapacity}     // ← new
+  acceptPendingBookings={() => handleAcceptBooking(booking)}
+  declinePendingBookings={() => { setSelectedBooking(booking); setDeclineModalOpen(true); }}
+/>
                 ))}
               </div>
               <div className="space-y-3 sm:space-y-4">
                 {bookingsActiveTab === "accepted" && filteredAcceptedBookings.map((booking) => (
-                  <ViewBookingsCard key={booking.bookingId} bookingId={booking.bookingId} ticketcode={booking.ticketcode} boatId={booking.boatId ?? "—"} boatName={booking.boatName ?? "—"} operatorId={boatOperatorLoggedIn?.boatOperatorId ?? "—"} companyName={booking.companyName ?? "—"} passengerName={booking.passengerName ?? "—"} bookingDate={booking.bookingDate} tripDate={booking.tripDate} paymentMethod={booking.paymentMethod ?? "—"} routeFrom={booking.routeFrom ?? "—"} routeTo={booking.routeTo ?? "—"} schedules={booking.schedules ?? null} totalPrice={booking.ticketPrice ?? 0} status={booking.bookingstatus} image={booking.image ?? ""}
-                    acceptPendingBookings={() => handleAcceptBooking(booking)} declinePendingBookings={() => { setSelectedBooking(booking); setDeclineModalOpen(true); }} />
+<ViewBookingsCard
+  key={booking.bookingId}
+  bookingId={booking.bookingId}
+  ticketcode={booking.ticketcode}
+  boatId={booking.boatId ?? "—"}
+  boatName={booking.boatName ?? "—"}
+  operatorId={boatOperatorLoggedIn?.boatOperatorId ?? "—"}
+  companyName={booking.companyName ?? "—"}
+  passengerName={booking.passengerName ?? "—"}
+  bookingDate={booking.bookingDate}
+  tripDate={booking.tripDate}
+  paymentMethod={booking.paymentMethod ?? "—"}
+  routeFrom={booking.routeFrom ?? "—"}
+  routeTo={booking.routeTo ?? "—"}
+  schedules={booking.schedules ?? null}
+  totalPrice={booking.ticketPrice ?? 0}
+  status={booking.bookingstatus}
+  image={booking.image ?? ""}
+  remainingSeats={booking.remainingSeats}   // ← new
+  totalCapacity={booking.totalCapacity}     // ← new
+  acceptPendingBookings={() => handleAcceptBooking(booking)}
+  declinePendingBookings={() => { setSelectedBooking(booking); setDeclineModalOpen(true); }}
+/>
                 ))}
               </div>
               <div className="space-y-3 sm:space-y-4">
