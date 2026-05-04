@@ -51,12 +51,15 @@ export async function getRecommendedBoatsController(req: Request, res: Response)
 export async function getRecommendedBoatsWeightedController(req: Request, res: Response) {
   try {
     const user  = req.user as AuthPayload;
+    if (!user?.sub) {
+      return res.status(401).json({ message: "Unauthorized" });
+    }
     const limit = Math.min(Number(req.query.limit ?? 6), 20);
     const boats = await userService.getRecommendedBoatsWeighted(String(user.sub), limit);
-    res.json(boats);
+    return res.json(boats);
   } catch (err: any) {
     console.error("getRecommendedBoatsWeighted error:", err);
-    res.status(500).json({ message: err.message || "Internal server error" });
+    return res.status(500).json({ message: err.message || "Internal server error" });
   }
 }
 

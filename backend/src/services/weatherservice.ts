@@ -367,3 +367,37 @@ export async function getSpotcastDailyClassifications(req: Request, res: Respons
     return res.status(500).json({ error: "SpotCast failed", detail: err.message });
   }
 }
+export async function triggerAutoCancelFromCache(req: Request, res: Response) {
+  try {
+    const today = new Date().toISOString().split("T")[0];
+    const cached = await getCachedSpotcast(today, 10.3141, 123.9388);
+
+    if (!cached?.daily_classifications) {
+      return res.json({ cancelled: 0, message: "No cache available" });
+    }
+
+    const result = await checkAndCancelDangerousBookings();
+
+    // Invalidate booking caches so fresh data is returned after cancellation
+    const [affectedUsers] = await connection.execute<RowDataPacket[]>(
+      `SELECT DISTINCT fk_booking_userId AS userId
+       FROM bookings
+       WHERE bookingstatus = 'cancelled'
+         AND DATE(trip_date) >= ?`,
+      [today]
+    );
+
+    for (const u of affectedUsers) {
+      await invalidateCache(
+        `bookings:pending:${u.userId}`,
+        `bookings:accepted:${u.userId}`,
+        `bookings:history:${u.userId}`
+      );
+    }
+
+    return res.json(result);
+  } catch (err: any) {
+    console.error("Trigger auto-cancel error:", err.message);
+    return res.status(500).json({ error: err.message });
+  }
+}

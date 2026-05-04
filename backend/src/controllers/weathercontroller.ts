@@ -1,6 +1,5 @@
-import { getWeatherData , getSpotcastDailyClassifications } from "../services/weatherservice.js";
+import { getWeatherData, getSpotcastDailyClassifications, triggerAutoCancelFromCache } from "../services/weatherservice.js";
 import { Request, Response } from "express";
-
 
 export async function weatherDataController(req: Request, res: Response) {
   try {
@@ -10,4 +9,12 @@ export async function weatherDataController(req: Request, res: Response) {
     console.error("Controller error:", error);
     res.status(500).json({ message: "Failed to retrieve weather data" });
   }
+}
+
+export async function spotcastController(req: Request, res: Response) {
+  return getSpotcastDailyClassifications(req, res);
+}
+
+export async function autoCancelController(req: Request, res: Response) {
+  return triggerAutoCancelFromCache(req, res);
 }

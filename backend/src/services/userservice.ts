@@ -151,12 +151,14 @@ async function buildDecayedMatrix(): Promise<{
   rawPopularity: Record<string, number>;
   validBoatIds:  Set<string>;
 }> {
-  return withCache("cf:matrix:all", MATRIX_TTL, async () => {
+  // Can't cache a Set directly — serialize as array, rehydrate after
+  const cached = await withCache("cf:matrix:all", MATRIX_TTL, async () => {
     const [boatIdRows] = await connection.execute<RowDataPacket[]>(
       `SELECT boat_id FROM boats
        WHERE registration_status = 'verified' AND status = 'active'`
     );
-    const validBoatIds = new Set<string>(boatIdRows.map(r => String(r.boat_id)));
+    const validBoatIdsArray = boatIdRows.map(r => String(r.boat_id));
+    const validBoatIds = new Set<string>(validBoatIdsArray);
 
     const rawMatrix:     Record<string, Record<string, number>> = {};
     const rawPopularity: Record<string, number>                 = {};
@@ -200,8 +202,16 @@ async function buildDecayedMatrix(): Promise<{
       matrix[uid] = l2Normalise(rawMatrix[uid]);
     }
 
-    return { matrix, rawPopularity, validBoatIds };
+    // ✅ Serialize Set as plain array so JSON cache round-trip is safe
+    return { matrix, rawPopularity, validBoatIdsArray };
   });
+
+  // ✅ Rehydrate the array back into a Set after cache read
+  return {
+    matrix:        cached.matrix,
+    rawPopularity: cached.rawPopularity,
+    validBoatIds:  new Set<string>(cached.validBoatIdsArray),
+  };
 }
 
 // ─── Weighted + decay CF recommendations ─────────────────────────────────────

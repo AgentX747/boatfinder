@@ -563,44 +563,59 @@ export default function UserDashboard() {
     }
   }
 
-  async function checkForAutoCancelledTrips(pending: any[], accepted: any[]) {
-    try {
-      const res = await fetch("https://boatfinder.onrender.com/weather/airesponse", { method: "GET", credentials: "include" })
-      if (!res.ok) return
-      const spotData = await res.json()
-      const classifications: DayClassification[] = spotData.daily_classifications ?? []
+async function checkForAutoCancelledTrips(pending: any[], accepted: any[]) {
+  try {
+    // 1. Fetch SpotCast classifications (cached — no credit used)
+    const [spotRes] = await Promise.all([
+      fetch("https://boatfinder.onrender.com/weather/airesponse", {
+        method: "GET",
+        credentials: "include",
+      }),
+      // 2. Simultaneously trigger backend DB cancellation from cache
+      fetch("https://boatfinder.onrender.com/weather/autocancel", {
+        method: "POST",
+        credentials: "include",
+      }).catch((err) => console.warn("Auto-cancel trigger failed (non-fatal):", err)),
+    ]);
 
-      // Cache classifications for booking-block checks
-      setWeatherClassifications(classifications)
+    if (!spotRes.ok) return;
 
-      const noGoDates = new Set<string>(
-        classifications
-          .filter((d: any) => normalizeClass(d.classification) === "NO-GO")
-          .map((d: any) => d.date)
-      )
-      if (noGoDates.size === 0) return
+    const spotData = await spotRes.json();
+    const classifications: DayClassification[] = spotData.daily_classifications ?? [];
 
-      const cancelled = [...pending, ...accepted]
-        .filter(b => {
-          const tripDate = String(b.trip_date ?? b.tripDate ?? "").slice(0, 10)
-          const isBookingCancelled = (b.bookingstatus ?? "").toLowerCase() === "cancelled"
-          const isBoatCancelled    = (b.boatstatus   ?? "").toLowerCase() === "cancelled"
-          return (isBookingCancelled || isBoatCancelled) && noGoDates.has(tripDate)
-        })
-        .map(b => ({
-          boatName:   b.boatName   ?? "Unknown boat",
-          tripDate:   String(b.trip_date ?? b.tripDate ?? "").slice(0, 10),
+    // Cache classifications for booking-block checks
+    setWeatherClassifications(classifications);
+
+    const noGoDates = new Set<string>(
+      classifications
+        .filter((d: any) => normalizeClass(d.classification) === "NO-GO")
+        .map((d: any) => d.date)
+    );
+
+    if (noGoDates.size === 0) return;
+
+    // Show warning for any bookings the user has on NO-GO dates
+    // (these may have just been cancelled by the backend call above)
+    const affected = [...pending, ...accepted].filter((b) => {
+      const tripDate = String(b.trip_date ?? b.tripDate ?? "").slice(0, 10);
+      return noGoDates.has(tripDate);
+    });
+
+    if (affected.length > 0) {
+      setCancelledTripDetails(
+        affected.map((b) => ({
+          boatName: b.boatName ?? "Unknown boat",
+          tripDate: String(b.trip_date ?? b.tripDate ?? "").slice(0, 10),
           ticketcode: b.ticketcode ?? "—",
-          reason:     `NO-GO weather forecast for ${String(b.trip_date ?? b.tripDate ?? "").slice(0, 10)}`,
+          reason: `NO-GO weather forecast for ${String(b.trip_date ?? b.tripDate ?? "").slice(0, 10)}`,
         }))
-      if (cancelled.length > 0) {
-        setCancelledTripDetails(cancelled)
-        setCancelWarningOpen(true)
-      }
-    } catch (err) {
-      console.error("Auto-cancel check failed (non-fatal):", err)
+      );
+      setCancelWarningOpen(true);
     }
+  } catch (err) {
+    console.error("Auto-cancel check failed (non-fatal):", err);
   }
+}
 
   async function handleSearchBoat() {
     try {
