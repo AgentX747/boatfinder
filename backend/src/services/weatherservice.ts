@@ -165,7 +165,7 @@ async function checkAndCancelDangerousBookings(): Promise<{
     return { cancelled: 0, details: [] };
   }
 
-  // Collect every NO-GO date in the cached forecast (up to 5 days)
+  // Collect ALL NO-GO dates in the forecast window (today + up to 5 days ahead)
   const noGoDates = new Set<string>();
   for (const day of cached.daily_classifications) {
     const cls = (day.classification ?? "").toUpperCase().trim();
@@ -175,7 +175,10 @@ async function checkAndCancelDangerousBookings(): Promise<{
       cls === "HIGH" ||
       cls === "DANGEROUS"
     ) {
-      noGoDates.add(day.date);
+      // Only cancel future dates (today and onwards — not past trips)
+      if (day.date >= today) {
+        noGoDates.add(day.date);
+      }
     }
   }
 
@@ -184,12 +187,12 @@ async function checkAndCancelDangerousBookings(): Promise<{
     return { cancelled: 0, details: [] };
   }
 
-  console.log(`🚨 NO-GO dates: ${[...noGoDates].join(", ")}`);
+  console.log(`🚨 NO-GO dates to cancel ahead: ${[...noGoDates].join(", ")}`);
 
-  // Find ferry bookings on those dates that are not yet cancelled
   const dateList = [...noGoDates];
   const placeholders = dateList.map(() => "?").join(", ");
 
+  // Find all bookings on NO-GO dates regardless of vessel type
   const [rows] = await connection.execute<RowDataPacket[]>(
     `SELECT
        b.booking_id,
@@ -199,54 +202,52 @@ async function checkAndCancelDangerousBookings(): Promise<{
        b.trip_date,
        bt.vessel_type
      FROM bookings b
-     JOIN boats bt         ON b.fk_booking_boatId      = bt.boat_id
-     JOIN boatoperators bo ON b.fk_booking_operatorId  = bo.operator_id
+     JOIN boats bt         ON b.fk_booking_boatId     = bt.boat_id
+     JOIN boatoperators bo ON b.fk_booking_operatorId = bo.operator_id
      WHERE DATE(b.trip_date) IN (${placeholders})
-       AND LOWER(bt.vessel_type) = 'ferry'
-       AND b.boatstatus != 'cancelled'
+       AND b.boatstatus    != 'cancelled'
        AND b.bookingstatus IN ('pending', 'accepted')`,
     dateList
   );
 
   if (rows.length === 0) {
-    console.log("No ferry bookings on NO-GO dates — nothing to cancel");
+    console.log("No bookings on NO-GO dates — nothing to cancel");
     return { cancelled: 0, details: [] };
   }
 
-  // Cancel each booking and collect cache keys to bust
-  const cacheKeys = new Set<string>();
+  console.log(`Found ${rows.length} booking(s) to cancel across NO-GO dates`);
+
   const details: { bookingId: number; tripDate: string; reason: string }[] = [];
 
   for (const row of rows) {
-    await connection.execute(
-      `UPDATE bookings SET boatstatus = 'cancelled' WHERE booking_id = ?`,
-      [row.booking_id]
-    );
+    try {
+      await connection.execute(
+        `UPDATE bookings
+         SET boatstatus    = 'cancelled',
+             bookingstatus = 'cancelled'
+         WHERE booking_id  = ?`,
+        [row.booking_id]
+      );
 
-    const tripDate = String(row.trip_date).slice(0, 10);
-    details.push({
-      bookingId: Number(row.booking_id),
-      tripDate,
-      reason: `NO-GO weather forecast for ${tripDate}`,
-    });
+      details.push({
+        bookingId: row.booking_id,
+        tripDate:  row.trip_date,
+        reason:    `NO-GO weather forecast for ${row.trip_date}`,
+      });
 
-    // Passenger caches
-    cacheKeys.add(`bookings:pending:${row.userId}`);
-    cacheKeys.add(`bookings:accepted:${row.userId}`);
-    cacheKeys.add(`bookings:history:${row.userId}`);
+      console.log(
+        `✅ Cancelled booking #${row.booking_id} (trip: ${row.trip_date}, vessel: ${row.vessel_type})`
+      );
 
-    // Operator caches
-    cacheKeys.add(`operator:bookings:pending:${row.operatorUserId}`);
-    cacheKeys.add(`operator:bookings:accepted:${row.operatorUserId}`);
-    cacheKeys.add(`operator:bookings:history:${row.operatorUserId}`);
+      // Optional: notify user and operator here
+      // await sendCancellationNotification(row.userId, row.operatorUserId, row);
+
+    } catch (err) {
+      console.error(`❌ Failed to cancel booking #${row.booking_id}:`, err);
+    }
   }
 
-  await invalidateCache(...cacheKeys);
-  console.log(
-    `✅ Auto-cancelled ${rows.length} ferry booking(s). Cache keys busted: ${[...cacheKeys].join(", ")}`
-  );
-
-  return { cancelled: rows.length, details };
+  return { cancelled: details.length, details };
 }
 
 // ── MAIN SPOTCAST CONTROLLER ──────────────────────────────────────────────────
