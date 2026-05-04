@@ -874,3 +874,52 @@ export async function getRefundDetails(refundId: number, user: AuthPayload) {
   );
   return rows.length === 0 ? null : rows[0];
 }
+export async function getSlotCapacity(
+  boatId:   string,
+  tripDate: string
+): Promise<Record<string, { remaining: number; capacity: number }>> {
+  // 1. Read total capacity from boats table (source of truth)
+  const [boatRows] = await connection.execute<RowDataPacket[]>(
+    `SELECT capacity_information, schedules
+     FROM boats
+     WHERE boat_id = ? AND registration_status = 'verified' AND status = 'active'`,
+    [parseInt(boatId)]
+  );
+  if (!boatRows.length) throw { status: 404, message: "Boat not found" };
+
+  const capacity: number = Number(boatRows[0].capacity_information);
+  const rawSchedules = boatRows[0].schedules;
+  const schedules: { departureTime: string; arrivalTime: string }[] =
+    typeof rawSchedules === "string" ? JSON.parse(rawSchedules) : rawSchedules ?? [];
+
+  // 2. Count active bookings grouped by departure slot for this date
+  const [countRows] = await connection.execute<RowDataPacket[]>(
+    `SELECT
+       JSON_UNQUOTE(JSON_EXTRACT(schedules, '$.departureTime')) AS departureTime,
+       COUNT(*) AS activeBookings
+     FROM bookings
+     WHERE fk_booking_boatId = ?
+       AND trip_date = ?
+       AND bookingstatus NOT IN ('cancelled')
+     GROUP BY departureTime`,
+    [parseInt(boatId), tripDate]
+  );
+
+  // Build a lookup: departureTime → active count
+  const activeMap: Record<string, number> = {};
+  for (const row of countRows) {
+    activeMap[row.departureTime] = Number(row.activeBookings);
+  }
+
+  // 3. Return remaining seats per slot
+  const result: Record<string, { remaining: number; capacity: number }> = {};
+  for (const slot of schedules) {
+    const active = activeMap[slot.departureTime] ?? 0;
+    result[slot.departureTime] = {
+      remaining: Math.max(0, capacity - active),
+      capacity,
+    };
+  }
+
+  return result;
+}

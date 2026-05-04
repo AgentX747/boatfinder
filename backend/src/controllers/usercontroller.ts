@@ -456,3 +456,18 @@ export async function getRefundTicketDetailsController(req: Request, res: Respon
     res.status(500).json({ message: "Failed to fetch refund details" });
   }
 }
+export async function getSlotCapacityController(req: Request, res: Response) {
+  try {
+    const boatId   = String(req.params.boatId);
+    const tripDate = String(req.query.tripDate ?? "");
+
+    if (!tripDate || !/^\d{4}-\d{2}-\d{2}$/.test(tripDate)) {
+      return res.status(400).json({ message: "tripDate query param is required (YYYY-MM-DD)" });
+    }
+
+    const data = await userService.getSlotCapacity(boatId, tripDate);
+    return res.json(data);
+  } catch (err: any) {
+    return res.status(err.status || 500).json({ message: err.message || "Internal server error" });
+  }
+}

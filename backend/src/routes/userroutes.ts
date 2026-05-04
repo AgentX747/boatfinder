@@ -22,7 +22,9 @@ import {
   refundTicketController,
   searchBoatsController,
   submitTicketController,
-  trackInteractionController
+  
+  trackInteractionController,
+  getSlotCapacityController
 } from "../controllers/usercontroller.js";
 import { requireAuth } from "../middleware/authmiddleware.js";
 import { authorizeRole } from "../middleware/authorizationmiddleware.js";
@@ -72,13 +74,14 @@ router.get("/getrefundticketcards",          requireAuth, authorizeRole("user"),
 router.get("/getsupportticketcards",         requireAuth, authorizeRole("user"), getSupportTicketCardsController);
 router.get("/getrefunddetails/:refundId",    requireAuth, authorizeRole("user"), getRefundTicketDetailsController);
 router.get("/getticketdetails/:ticketId",    requireAuth, authorizeRole("user"), getTicketDetailsController);
+router.get("/slot-capacity/:boatId",         requireAuth, authorizeRole("user"), getSlotCapacityController);
 
 // ── Mutations ────────────────────────────────────────────────────────────────
 router.post("/physicalbookboat",  requireAuth, authorizeRole("user"), bookingLimiter, physicalbookBoatController);
 router.post("/onlinebookboat",    requireAuth, authorizeRole("user"), bookingLimiter, parseBoatFiles, uploadGcashImage, onlinebookBoatController);
 router.post("/refundticket",      requireAuth, authorizeRole("user"), uploadLimiter, parseBoatFiles, uploadRefundImage, refundTicketController);
 router.post("/submitticket",      requireAuth, authorizeRole("user"), ticketLimiter, submitTicketController);
-
+router.get("/slot-capacity/:boatId",  requireAuth, authorizeRole("user"), getSlotCapacityController);
 router.patch("/cancelbooking/:bookingId",   requireAuth, authorizeRole("user"), bookingActionLimiter, cancelPendingBookingController);
 router.patch("/confirmedituser/:userId",    requireAuth, authorizeRole("user"), editLimiter, confirmEditUserController);
 
