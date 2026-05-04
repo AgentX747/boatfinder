@@ -957,16 +957,7 @@ export default function UserDashboard() {
                         boatStatus={booking.boatstatus ?? "active"}
                         navigateTo={() => navigate(`/currentbookings/${booking.booking_id}`)}
                       />
-                      <button
-                        className="mt-2 px-4 py-1.5 bg-red-100 hover:bg-red-200 text-red-700 text-xs font-semibold rounded-lg transition-colors"
-                        onClick={() => openCancelModal(
-                          String(booking.booking_id),
-                          booking.ticketcode,
-                          booking.boatName
-                        )}
-                      >
-                        Cancel Booking
-                      </button>
+                     
                     </div>
                   )) : <p className="text-gray-500 text-sm sm:text-base">{ticketSearch ? `No accepted bookings matching "${ticketSearch}"` : "No accepted bookings"}</p>
                 )}
