@@ -20,7 +20,7 @@ import {
 
 interface DailyWeatherSummary {
   date: string;
-  classification: 'GO' | 'CAUTION' | 'HIGH';
+  classification: 'GO' | 'CAUTION' | 'HIGH' | 'NO-GO';
   summary: string;
   short_summary: string;
 }
@@ -57,9 +57,7 @@ export interface CurrentWeather {
   humidity: number;
   cloud: number;
   gust_kph: number;
-  last_updated : string;
-
-  
+  last_updated: string;
 }
 
 export interface HourForecast {
@@ -106,7 +104,7 @@ interface AlertType {
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-function getClassificationStyle(classification: 'GO' | 'CAUTION' | 'HIGH') {
+function getClassificationStyle(classification: 'GO' | 'CAUTION' | 'HIGH' | 'NO-GO') {
   switch (classification) {
     case 'GO':
       return {
@@ -131,6 +129,23 @@ function getClassificationStyle(classification: 'GO' | 'CAUTION' | 'HIGH') {
         header: 'text-red-900 dark:text-red-100',
         text: 'text-red-700 dark:text-red-300',
         icon: 'text-red-600 dark:text-red-400',
+      };
+    case 'NO-GO':
+      return {
+        container: 'bg-gradient-to-br from-gray-100 to-slate-100 dark:from-gray-950/40 dark:to-slate-950/40 border-gray-700 dark:border-gray-600',
+        badge: 'bg-gray-900 dark:bg-gray-800 text-white',
+        header: 'text-gray-900 dark:text-gray-100',
+        text: 'text-gray-700 dark:text-gray-300',
+        icon: 'text-gray-600 dark:text-gray-400',
+      };
+    default:
+      console.warn('[WeatherApp] Unexpected classification value:', classification);
+      return {
+        container: 'bg-gradient-to-br from-gray-50 to-slate-50 dark:from-gray-950/20 dark:to-slate-950/20 border-gray-300 dark:border-gray-700',
+        badge: 'bg-gray-500 dark:bg-gray-600 text-white',
+        header: 'text-gray-900 dark:text-gray-100',
+        text: 'text-gray-700 dark:text-gray-300',
+        icon: 'text-gray-600 dark:text-gray-400',
       };
   }
 }
@@ -445,6 +460,7 @@ function AIWeatherSummary({ data }: { data: AIForecastData }) {
                   {day.classification === 'GO' && '✓ GO'}
                   {day.classification === 'CAUTION' && '⚠ CAUTION'}
                   {day.classification === 'HIGH' && '🚫 HIGH'}
+                  {day.classification === 'NO-GO' && '⛔ NO-GO'}
                 </span>
               </div>
 
@@ -500,7 +516,6 @@ function WeatherAlerts({ alerts }: { alerts: AlertType[] }) {
 // ─── Main Page ────────────────────────────────────────────────────────────────
 
 export default function WeatherAnalyticsPage() {
-  // ── State Management ───────────────────────────────────────────────────────
   const [location, setLocation] = useState<WeatherLocation | null>(null);
   const [current, setCurrent] = useState<CurrentWeather | null>(null);
   const [hourlyData, setHourlyData] = useState<HourForecast[]>([]);
@@ -511,204 +526,186 @@ export default function WeatherAnalyticsPage() {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    // ─── PATCH: Replace only the fetchWeatherData function body in weatheranalytics.tsx ───
-// The backend /weather/getweatherdata returns { current, hourly, daily }
-// but the UI expects { location, current, forecast: { forecastday } }
-// This adapter re-maps the backend shape without touching anything else.
+    async function fetchWeatherData() {
+      try {
+        setLoading(true);
+        setError(null);
 
-async function fetchWeatherData() {
-  try {
-    setLoading(true);
-    setError(null);
+        console.log('[v0] Starting weather data fetch...');
 
-    console.log('[v0] Starting weather data fetch...');
+        const res = await fetch('https://boatfinder.onrender.com/weather/getweatherdata', {
+          method: 'GET',
+          credentials: 'include',
+        });
 
-    const res = await fetch('https://boatfinder.onrender.com/weather/getweatherdata', {
-      method: 'GET',
-      credentials: 'include',
-    });
+        if (!res.ok) {
+          throw new Error(`Failed to fetch weather data: ${res.statusText}`);
+        }
 
-    if (!res.ok) {
-      throw new Error(`Failed to fetch weather data: ${res.statusText}`);
+        const raw = await res.json();
+        console.log('[v0] API Response received:', raw);
+
+        let data: WeatherApiResponse;
+
+        if (raw.forecast?.forecastday) {
+          data = raw as WeatherApiResponse;
+        } else if (raw.hourly && raw.daily) {
+          const forecastday: DayForecast[] = (raw.daily as Array<{
+            date: string | Date;
+            max_temp_f: number;
+            min_temp_f: number;
+            max_wind_kph: number;
+            total_precip_mm: number;
+            condition: string;
+          }>).map((day) => {
+            const dayDateStr =
+              typeof day.date === 'string'
+                ? day.date.slice(0, 10)
+                : new Date(day.date).toISOString().slice(0, 10);
+
+            const dayHours: HourForecast[] = (raw.hourly as Array<{
+              time: string | Date;
+              temperature_c: number;
+              chance_of_rain: number;
+              precipitation_mm: number;
+              feels_like_c: number;
+              wind_kph: number;
+              gust_kph: number;
+              wind_degree?: number;
+              wind_dir: string;
+              cloud_percent: number;
+            }>)
+              .filter((h) => {
+                const hDate =
+                  typeof h.time === 'string'
+                    ? h.time.slice(0, 10)
+                    : new Date(h.time).toISOString().slice(0, 10);
+                return hDate === dayDateStr;
+              })
+              .map((h) => ({
+                time: typeof h.time === 'string' ? h.time : new Date(h.time).toISOString(),
+                temp_c: h.temperature_c,
+                condition: { icon: '', code: 1000 } as WeatherCondition,
+                wind_kph: h.wind_kph,
+                wind_dir: h.wind_dir,
+                pressure_mb: 0,
+                precip_mm: h.precipitation_mm,
+                cloud: h.cloud_percent,
+                feelslike_c: h.feels_like_c,
+                chance_of_rain: h.chance_of_rain,
+                gust_kph: h.gust_kph,
+              }));
+
+            return {
+              date: dayDateStr,
+              day: {
+                maxtemp_f: day.max_temp_f,
+                mintemp_f: day.min_temp_f,
+                maxwind_kph: day.max_wind_kph,
+                totalprecip_mm: day.total_precip_mm,
+                daily_will_it_rain: day.total_precip_mm > 0 ? 1 : 0,
+                condition: {
+                  text: day.condition,
+                  icon: '',
+                  code: 1063,
+                } as WeatherCondition,
+              },
+              hour: dayHours,
+            };
+          });
+
+          const c = raw.current as {
+            temperature_f: number;
+            condition: string;
+            wind_kph: number;
+            wind_dir: string;
+            pressure_mb: number;
+            precipitation_mm: number;
+            cloud_percent: number;
+            gust_kph: number;
+            humidity?: number;
+          };
+
+          data = {
+            location: raw.location ?? {
+              name: 'Unknown',
+              region: '',
+              country: '',
+              lat: 0,
+              lon: 0,
+              tz_id: '',
+              localtime_epoch: Date.now() / 1000,
+              localtime: new Date().toLocaleString(),
+            },
+            current: {
+              temp_f: c.temperature_f,
+              condition: { text: c.condition, icon: '', code: 1063 } as WeatherCondition,
+              wind_kph: c.wind_kph,
+              wind_dir: c.wind_dir,
+              pressure_mb: c.pressure_mb,
+              precip_mm: c.precipitation_mm,
+              precip_in: c.precipitation_mm / 25.4,
+              humidity: c.humidity ?? 0,
+              cloud: c.cloud_percent,
+              gust_kph: c.gust_kph,
+              last_updated: new Date().toISOString(),
+            },
+            forecast: { forecastday },
+          };
+        } else {
+          throw new Error('Unexpected API response shape — missing forecast.forecastday and hourly/daily');
+        }
+
+        setLocation(data.location);
+        setCurrent(data.current);
+
+        const allHourly: HourForecast[] = [];
+        data.forecast.forecastday.forEach((day) => {
+          allHourly.push(...day.hour);
+        });
+        setHourlyData(allHourly);
+
+        console.log('[v0] Hourly data count:', allHourly.length);
+        setForecastData(data.forecast.forecastday);
+
+        const derivedAlerts: AlertType[] = [];
+        if (data.current.precip_mm > 0) {
+          derivedAlerts.push({
+            type: 'Active Rainfall',
+            time: 'Now',
+            Icon: CloudRain,
+            description: `Current precipitation: ${data.current.precip_mm.toFixed(2)} mm. Wind gusts up to ${Math.round(data.current.gust_kph)} km/h.`,
+          });
+        }
+
+        const nextHours = allHourly.slice(0, 6);
+        const maxRainChance = Math.max(...nextHours.map((h) => h.chance_of_rain || 0));
+
+        if (maxRainChance > 60) {
+          derivedAlerts.push({
+            type: 'High Rain Probability',
+            time: `${maxRainChance}% chance`,
+            Icon: Cloud,
+            description: 'High probability of rain in the coming hours. Consider carrying an umbrella.',
+          });
+        }
+
+        setAlerts(derivedAlerts);
+      } catch (err) {
+        console.error('[v0] Fetch error:', err);
+        setError(err instanceof Error ? err.message : 'Failed to fetch weather data');
+      } finally {
+        setLoading(false);
+      }
     }
-
-    const raw = await res.json();
-    console.log('[v0] API Response received:', raw);
-
-    // ── Detect which shape we got and normalise ──────────────────────────────
-    // Shape A (raw WeatherAPI passthrough): has raw.location + raw.forecast.forecastday
-    // Shape B (backend-transformed):        has raw.current + raw.hourly + raw.daily
-    let data: WeatherApiResponse;
-
-    if (raw.forecast?.forecastday) {
-      // Shape A — already matches WeatherApiResponse, use as-is
-      data = raw as WeatherApiResponse;
-    } else if (raw.hourly && raw.daily) {
-      // Shape B — re-map to WeatherApiResponse
-
-      // Rebuild forecastday array from daily + hourly
-      const forecastday: DayForecast[] = (raw.daily as Array<{
-        date: string | Date;
-        max_temp_f: number;
-        min_temp_f: number;
-        max_wind_kph: number;
-        total_precip_mm: number;
-        condition: string;
-      }>).map((day) => {
-        const dayDateStr =
-          typeof day.date === 'string'
-            ? day.date.slice(0, 10)
-            : new Date(day.date).toISOString().slice(0, 10);
-
-        // Collect hours that belong to this day
-        const dayHours: HourForecast[] = (raw.hourly as Array<{
-          time: string | Date;
-          temperature_c: number;
-          chance_of_rain: number;
-          precipitation_mm: number;
-          feels_like_c: number;
-          wind_kph: number;
-          gust_kph: number;
-          wind_degree?: number;
-          wind_dir: string;
-          cloud_percent: number;
-        }>)
-          .filter((h) => {
-            const hDate =
-              typeof h.time === 'string'
-                ? h.time.slice(0, 10)
-                : new Date(h.time).toISOString().slice(0, 10);
-            return hDate === dayDateStr;
-          })
-          .map((h) => ({
-            time: typeof h.time === 'string' ? h.time : new Date(h.time).toISOString(),
-            temp_c: h.temperature_c,
-            condition: { icon: '', code: 1000 } as WeatherCondition,
-            wind_kph: h.wind_kph,
-            wind_dir: h.wind_dir,
-            pressure_mb: 0,
-            precip_mm: h.precipitation_mm,
-            cloud: h.cloud_percent,
-            feelslike_c: h.feels_like_c,
-            chance_of_rain: h.chance_of_rain,
-            gust_kph: h.gust_kph,
-          }));
-
-        return {
-          date: dayDateStr,
-          day: {
-            maxtemp_f: day.max_temp_f,
-            mintemp_f: day.min_temp_f,
-            maxwind_kph: day.max_wind_kph,
-            totalprecip_mm: day.total_precip_mm,
-            daily_will_it_rain: day.total_precip_mm > 0 ? 1 : 0,
-            condition: {
-              text: day.condition,
-              icon: '',
-              code: 1063,
-            } as WeatherCondition,
-          },
-          hour: dayHours,
-        };
-      });
-
-      // Re-map current
-      const c = raw.current as {
-        temperature_f: number;
-        condition: string;
-        wind_kph: number;
-        wind_dir: string;
-        pressure_mb: number;
-        precipitation_mm: number;
-        cloud_percent: number;
-        gust_kph: number;
-        humidity?: number;
-      };
-
-      data = {
-        location: raw.location ?? {
-          name: 'Unknown',
-          region: '',
-          country: '',
-          lat: 0,
-          lon: 0,
-          tz_id: '',
-          localtime_epoch: Date.now() / 1000,
-          localtime: new Date().toLocaleString(),
-        },
-        current: {
-          temp_f: c.temperature_f,
-          condition: { text: c.condition, icon: '', code: 1063 } as WeatherCondition,
-          wind_kph: c.wind_kph,
-          wind_dir: c.wind_dir,
-          pressure_mb: c.pressure_mb,
-          precip_mm: c.precipitation_mm,
-          precip_in: c.precipitation_mm / 25.4,
-          humidity: c.humidity ?? 0,
-          cloud: c.cloud_percent,
-          gust_kph: c.gust_kph,
-          last_updated: new Date().toISOString(),
-        },
-        forecast: { forecastday },
-      };
-    } else {
-      throw new Error('Unexpected API response shape — missing forecast.forecastday and hourly/daily');
-    }
-
-    setLocation(data.location);
-    setCurrent(data.current);
-
-    // Flatten all hourly data from all forecast days
-    const allHourly: HourForecast[] = [];
-    data.forecast.forecastday.forEach((day) => {
-      allHourly.push(...day.hour);
-    });
-    setHourlyData(allHourly);
-
-    console.log('[v0] Hourly data count:', allHourly.length);
-    setForecastData(data.forecast.forecastday);
-
-    // Derive alerts from current conditions
-    const derivedAlerts: AlertType[] = [];
-    if (data.current.precip_mm > 0) {
-      derivedAlerts.push({
-        type: 'Active Rainfall',
-        time: 'Now',
-        Icon: CloudRain,
-        description: `Current precipitation: ${data.current.precip_mm.toFixed(2)} mm. Wind gusts up to ${Math.round(data.current.gust_kph)} km/h.`,
-      });
-    }
-
-    const nextHours = allHourly.slice(0, 6);
-    const maxRainChance = Math.max(...nextHours.map((h) => h.chance_of_rain || 0));
-  
-
-    if (maxRainChance > 60) {
-      derivedAlerts.push({
-        type: 'High Rain Probability',
-        time: `${maxRainChance}% chance`,
-        Icon: Cloud,
-        description: 'High probability of rain in the coming hours. Consider carrying an umbrella.',
-      });
-    }
-
-    setAlerts(derivedAlerts);
-    
-  } catch (err) {
-    console.error('[v0] Fetch error:', err);
-    setError(err instanceof Error ? err.message : 'Failed to fetch weather data');
-  } finally {
-    setLoading(false);
-  }
-}
 
     async function fetchAIResponse(retryCount = 0) {
       try {
         console.log('[v0] Fetching AI response (attempt', retryCount + 1, ')');
 
-      const res = await fetch('https://boatfinder.onrender.com/weather/airesponse', {
-      credentials: 'include',
-    });
+        const res = await fetch('https://boatfinder.onrender.com/weather/airesponse', {
+          credentials: 'include',
+        });
 
         if (res.status === 429) {
           if (retryCount < 3) {
@@ -722,7 +719,16 @@ async function fetchWeatherData() {
 
         const data = await res.json();
         console.log('[v0] AI response received:', data);
-        setDailyForecast(data.daily_classifications || []);
+
+        setDailyForecast(
+          (data.daily_classifications || []).map((d: DailyWeatherSummary) => ({
+            ...d,
+            classification: (['GO', 'CAUTION', 'HIGH', 'NO-GO'].includes(d.classification)
+              ? d.classification
+              : 'CAUTION') as 'GO' | 'CAUTION' | 'HIGH' | 'NO-GO',
+          }))
+        );
+
         console.log('[v0] Daily forecast set:', data.daily_classifications?.length || 0, 'items');
       } catch (error) {
         console.error('[v0] AI fetch error:', error);
@@ -761,17 +767,15 @@ async function fetchWeatherData() {
   }
 
   const currentTemp = Math.round((current.temp_f - 32) * (5 / 9));
-  const feelsLike = Math.round(currentTemp);
 
   return (
     <main className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-blue-50 dark:from-blue-950/40 dark:via-slate-950 dark:to-blue-950/40 p-4 md:p-8">
       <div className="max-w-7xl mx-auto space-y-6">
+
         {/* ── Current Weather Header ─────────────────────────────────────────── */}
-                      <div className="relative bg-gradient-to-br from-blue-500 via-blue-600 to-blue-700 p-8 text-white rounded-2xl shadow-2xl border border-blue-400/30 overflow-hidden">
-          {/* Subtle decorative element */}
+        <div className="relative bg-gradient-to-br from-blue-500 via-blue-600 to-blue-700 p-8 text-white rounded-2xl shadow-2xl border border-blue-400/30 overflow-hidden">
           <div className="absolute top-0 right-0 w-96 h-96 bg-blue-300/10 rounded-full blur-3xl -z-10"></div>
-          
-          {/* Header section */}
+
           <div className="relative z-10 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 pb-8 border-b border-blue-400/30 mb-8">
             <div className="flex items-center gap-3">
               <div className="p-2 bg-white/20 rounded-lg">
@@ -784,9 +788,7 @@ async function fetchWeatherData() {
             </div>
           </div>
 
-          {/* Main content */}
           <div className="relative z-10 flex flex-col lg:flex-row gap-8 lg:gap-12">
-            {/* ── Left: Temperature Display ── */}
             <div className="flex-shrink-0">
               <div className="mb-6">
                 <div className="flex items-start gap-4 mb-8">
@@ -795,10 +797,6 @@ async function fetchWeatherData() {
                       const WeatherIcon = weatherIcon(
                         current.condition.text || weatherLabel(current.condition.code)
                       );
-                      const iconColor = getWeatherIconColor(
-                        current.condition.text || weatherLabel(current.condition.code)
-                      );
-                      // Override to white for the header, keep colorful for other sections
                       return <WeatherIcon className="w-16 h-16 text-white" />;
                     })()}
                   </div>
@@ -829,41 +827,29 @@ async function fetchWeatherData() {
               </div>
             </div>
 
-            {/* ── Right: Weather Stats Grid ── */}
             <div className="flex-1">
               <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-                {/* Humidity */}
                 <div className="bg-white/20 backdrop-blur-sm rounded-xl px-5 py-4 border border-white/20 hover:bg-white/30 transition-all">
                   <div className="text-xs font-medium text-white/80 uppercase tracking-wide mb-2">Humidity</div>
                   <div className="text-3xl font-bold text-white">{current.humidity}<span className="text-lg text-white/60">%</span></div>
                 </div>
-
-                {/* Cloud Cover */}
                 <div className="bg-white/20 backdrop-blur-sm rounded-xl px-5 py-4 border border-white/20 hover:bg-white/30 transition-all">
                   <div className="text-xs font-medium text-white/80 uppercase tracking-wide mb-2">Cloud Cover</div>
                   <div className="text-3xl font-bold text-white">{current.cloud}<span className="text-lg text-white/60">%</span></div>
                 </div>
-
-                {/* Pressure */}
                 <div className="bg-white/20 backdrop-blur-sm rounded-xl px-5 py-4 border border-white/20 hover:bg-white/30 transition-all">
                   <div className="text-xs font-medium text-white/80 uppercase tracking-wide mb-2">Pressure</div>
                   <div className="text-3xl font-bold text-white">{Math.round(current.pressure_mb)}<span className="text-lg text-white/60">mb</span></div>
                 </div>
-
-                {/* Wind */}
                 <div className="bg-white/20 backdrop-blur-sm rounded-xl px-5 py-4 border border-white/20 hover:bg-white/30 transition-all">
                   <div className="text-xs font-medium text-white/80 uppercase tracking-wide mb-2">Wind</div>
                   <div className="text-3xl font-bold text-white">{Math.round(current.wind_kph)}<span className="text-lg text-white/60">km/h</span></div>
                   <div className="text-xs text-white/70 mt-2 font-semibold">Direction: {current.wind_dir}</div>
                 </div>
-
-                {/* Gusts */}
                 <div className="bg-white/20 backdrop-blur-sm rounded-xl px-5 py-4 border border-white/20 hover:bg-white/30 transition-all">
                   <div className="text-xs font-medium text-white/80 uppercase tracking-wide mb-2">Gusts</div>
                   <div className="text-3xl font-bold text-white">{Math.round(current.gust_kph)}<span className="text-lg text-white/60">km/h</span></div>
                 </div>
-
-                {/* Precipitation */}
                 <div className="bg-white/20 backdrop-blur-sm rounded-xl px-5 py-4 border border-white/20 hover:bg-white/30 transition-all">
                   <div className="text-xs font-medium text-white/80 uppercase tracking-wide mb-2">Precipitation</div>
                   <div className="text-3xl font-bold text-white">{current.precip_mm.toFixed(1)}<span className="text-lg text-white/60">mm</span></div>
@@ -872,8 +858,6 @@ async function fetchWeatherData() {
             </div>
           </div>
         </div>
-
-
 
         {/* ── Weather Alerts ────────────────────────────────────────────────── */}
         {alerts.length > 0 && <WeatherAlerts alerts={alerts} />}
@@ -884,7 +868,7 @@ async function fetchWeatherData() {
         {/* ── 5-Day Forecast ────────────────────────────────────────────────── */}
         {forecastData.length > 0 && <DailyForecast forecast={forecastData} />}
 
-        {/* ── Daily AI Weather Summary Section ───────────────────────────────── */}
+        {/* ── Daily AI Weather Summary ──────────────────────────────────────── */}
         {dailyForecast.length > 0 && (
           <AIWeatherSummary data={{ daily_classifications: dailyForecast }} />
         )}
