@@ -117,7 +117,7 @@ export async function physicalbookBoatController(req: Request, res: Response) {
 
     const { sub, role } = req.user as AuthPayload;
     const userId = parseInt(sub);
-    const userRole = Array.isArray(role) ? role[0] : role ?? null;  // ← normalize to string | null
+    const userRole = Array.isArray(role) ? role[0] : role ?? null;
 
     const result = await userService.physicalbookTransaction(userId, req.body, userRole);
 
@@ -326,7 +326,7 @@ export async function onlinebookBoatController(req: Request, res: Response) {
 
     const { sub, role } = req.user as AuthPayload;
     const userId = parseInt(sub);
-    const userRole = Array.isArray(role) ? role[0] : role ?? null;  // ← same fix
+    const userRole = Array.isArray(role) ? role[0] : role ?? null;
 
     const result = await onlineService.confirmOnlinePayment(userId, req.body, userRole);
 
@@ -339,6 +339,7 @@ export async function onlinebookBoatController(req: Request, res: Response) {
     return res.status(err.status || 500).json({ message: err.message || 'Internal server error' });
   }
 }
+
 export async function refundTicketController(req: Request, res: Response) {
   try {
     const user = req.user as AuthPayload;
@@ -459,10 +460,19 @@ export async function getRefundTicketDetailsController(req: Request, res: Respon
     res.status(500).json({ message: "Failed to fetch refund details" });
   }
 }
+
+// ── Slot Capacity ─────────────────────────────────────────────────────────────
+// Handles both:
+//   GET /user/slot-capacity/:boatId?tripDate=YYYY-MM-DD  (primary)
+//   GET /user/slotcounts/:boatId?tripDate=YYYY-MM-DD     (backward-compat alias)
+//
+// Response: { "7:00 AM": { remaining, capacity, bookedCount }, … }
 export async function getSlotCapacityController(req: Request, res: Response) {
   try {
     const boatId   = String(req.params.boatId);
-    const tripDate = String(req.query.tripDate ?? "");
+
+    // Accept both ?tripDate= (new) and ?date= (legacy) so old callers still work
+    const tripDate = String(req.query.tripDate ?? req.query.date ?? "");
 
     if (!tripDate || !/^\d{4}-\d{2}-\d{2}$/.test(tripDate)) {
       return res.status(400).json({ message: "tripDate query param is required (YYYY-MM-DD)" });

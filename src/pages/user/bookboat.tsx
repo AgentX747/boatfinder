@@ -32,6 +32,13 @@ interface DayClassification {
   short_summary: string;
 }
 
+// Shape returned by /user/slot-capacity/:boatId?tripDate=YYYY-MM-DD
+interface SlotData {
+  remaining: number;
+  capacity: number;
+  bookedCount: number;
+}
+
 function DetailItem({ label, value }: DetailItemProps) {
   return (
     <div className="flex flex-col">
@@ -219,20 +226,30 @@ function DateWeatherBadge({ cls }: { cls: string | null }) {
 }
 
 // ─── Seat badge ───────────────────────────────────────────────────────────────
-function SeatBadge({ remaining, capacity }: { remaining: number; capacity: number }) {
+// FIX: accepts booked + capacity from the richer /slot-capacity response so
+//      the badge can show "X left · booked/capacity" and "Sold Out · 40/40".
+function SeatBadge({
+  remaining,
+  capacity,
+  booked,
+}: {
+  remaining: number;
+  capacity: number;
+  booked: number;
+}) {
   if (remaining <= 0) return (
     <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-bold bg-red-100 text-red-700 border border-red-200">
-      Full
+      Sold Out · {booked}/{capacity}
     </span>
   );
   if (remaining <= Math.ceil(capacity * 0.2)) return (
     <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-bold bg-amber-100 text-amber-700 border border-amber-200">
-      <Users className="w-3 h-3" /> {remaining} left
+      <Users className="w-3 h-3" /> {remaining} left · {booked}/{capacity}
     </span>
   );
   return (
     <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-bold bg-green-100 text-green-700 border border-green-200">
-      <Users className="w-3 h-3" /> {remaining} left
+      <Users className="w-3 h-3" /> {remaining} left · {booked}/{capacity}
     </span>
   );
 }
@@ -247,7 +264,8 @@ export default function BookBoat() {
   const [selectedSchedule, setSelectedSchedule] =
     useState<{ departureTime: string; arrivalTime: string } | null>(null);
 
-  const [slotCounts, setSlotCounts]             = useState<Record<string, number>>({});
+  // FIX: slotCounts now stores the richer object from /user/slot-capacity
+  const [slotCounts, setSlotCounts]             = useState<Record<string, SlotData>>({});
   const [slotCountsLoading, setSlotCountsLoading] = useState(false);
 
   // Weather state
@@ -275,9 +293,12 @@ export default function BookBoat() {
   // ── Capacity helpers ──────────────────────────────────────────────────────
   const totalCapacity = Number(bookDetails?.capacity ?? 0);
 
+  // FIX: read .remaining from the richer SlotData object.
+  // Before the fetch resolves, default to totalCapacity so slots don't
+  // flicker as "Sold Out" while loading.
   function getRemainingSeats(slot: { departureTime: string }): number {
-    const booked = slotCounts[slot.departureTime] ?? 0;
-    return Math.max(0, totalCapacity - booked);
+    const key = slot.departureTime.trim();
+    return slotCounts[key]?.remaining ?? totalCapacity;
   }
 
   function isSlotFull(slot: { departureTime: string }): boolean {
@@ -286,15 +307,18 @@ export default function BookBoat() {
   }
 
   // ── Fetch slot counts ─────────────────────────────────────────────────────
+  // FIX: corrected URL (/slot-capacity) and query param (tripDate=) to match
+  //      the actual backend route registered in userrouter.ts.
   async function fetchSlotCounts(date: string) {
     if (!boatID || !date) return;
     setSlotCountsLoading(true);
     try {
       const res = await apiFetch(
-        `https://boatfinder.onrender.com/user/slotcounts/${boatID}?date=${date}`,
+        `https://boatfinder.onrender.com/user/slot-capacity/${boatID}?tripDate=${date}`,
         { method: "GET", credentials: "include" }
       );
       if (res.ok) {
+        // Response shape: { "7:00 AM": { remaining, capacity, bookedCount }, … }
         const data = await res.json();
         setSlotCounts(data);
       }
@@ -357,9 +381,7 @@ export default function BookBoat() {
     fetchWeather();
   }, [boatID, navigate]);
 
-  // ── FIX: Re-check NO-GO whenever weather loads for an already-selected date
-  // This covers the race condition where the user picks a date before weather
-  // data has arrived — the modal will fire as soon as the data is available.
+  // ── Re-check NO-GO whenever weather loads for an already-selected date ────
   useEffect(() => {
     if (!weatherLoaded || !tripDate) return;
     const match = weatherClassifications.find(d => d.date === tripDate.slice(0, 10));
@@ -374,9 +396,6 @@ export default function BookBoat() {
   }, [weatherLoaded, tripDate, weatherClassifications]);
 
   // ── Date change handler ───────────────────────────────────────────────────
-  // NOTE: NO-GO modal on immediate date change is also handled here, but the
-  // useEffect above is the authoritative gate — it covers the race condition
-  // where weather loads after the user has already picked a date.
   function handleDateChange(newDate: string) {
     setTripDate(newDate);
     setSelectedSchedule(null);
@@ -386,7 +405,6 @@ export default function BookBoat() {
       fetchSlotCounts(newDate);
     }
 
-    // Immediate modal if weather is already loaded when the user picks the date
     if (newDate && weatherLoaded) {
       const match = weatherClassifications.find(d => d.date === newDate.slice(0, 10));
       if (match && normalizeClass(match.classification) === "NO-GO") {
@@ -400,14 +418,10 @@ export default function BookBoat() {
     }
   }
 
-  // ── Weather block guard (used inside validateBooking) ─────────────────────
-  // FIX: fail-safe — if weather data hasn't loaded yet, BLOCK the booking
-  // rather than silently allow it through.
+  // ── Weather block guard ───────────────────────────────────────────────────
   function checkWeatherBlock(): boolean {
     if (!tripDate) return false;
 
-    // If weather service returned an error, allow booking (fail-open)
-    // but if it simply hasn't loaded yet, hold the booking (fail-safe)
     if (!weatherLoaded && !weatherError) {
       alert("Weather safety data is still loading. Please wait a moment and try again.");
       return true;
@@ -439,7 +453,6 @@ export default function BookBoat() {
       return false;
     }
 
-    // Weather block — runs fail-safe if weather hasn't loaded yet
     if (checkWeatherBlock()) return false;
 
     if (!selectedSchedule) {
@@ -480,12 +493,10 @@ export default function BookBoat() {
         alert("Booking successful!");
         navigate("/userdashboard");
       } else {
-        // 409 = slot just filled up — refresh counts so UI reflects reality
         if (response.status === 409) {
           await fetchSlotCounts(tripDate);
           setSelectedSchedule(null);
         }
-        // 422 = server-side NO-GO block — show modal instead of plain alert
         if (response.status === 422) {
           const match = weatherClassifications.find(d => d.date === tripDate.slice(0, 10));
           setNoGoModal({
@@ -746,8 +757,14 @@ export default function BookBoat() {
                           const isSelected =
                             selectedSchedule?.departureTime === slot.departureTime &&
                             selectedSchedule?.arrivalTime   === slot.arrivalTime;
-                          const full      = isSlotFull(slot);
-                          const remaining = getRemainingSeats(slot);
+
+                          // FIX: pull richer data from the new slotCounts shape
+                          const key       = slot.departureTime.trim();
+                          const slotData  = slotCounts[key];
+                          const remaining = slotData?.remaining ?? totalCapacity;
+                          const booked    = slotData?.bookedCount ?? 0;
+                          const cap       = slotData?.capacity ?? totalCapacity;
+                          const full      = remaining <= 0;
 
                           return (
                             <button
@@ -775,7 +792,12 @@ export default function BookBoat() {
                                   </div>
                                 </div>
                                 <div className="flex items-center gap-2 flex-shrink-0">
-                                  <SeatBadge remaining={remaining} capacity={totalCapacity} />
+                                  {/* FIX: pass booked + cap so the badge shows "X left · booked/cap" */}
+                                  <SeatBadge
+                                    remaining={remaining}
+                                    capacity={cap}
+                                    booked={booked}
+                                  />
                                   {isSelected && !full && (
                                     <span className="text-blue-600 font-bold text-lg">✓</span>
                                   )}

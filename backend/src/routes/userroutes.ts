@@ -22,7 +22,6 @@ import {
   refundTicketController,
   searchBoatsController,
   submitTicketController,
-  
   trackInteractionController,
   getSlotCapacityController
 } from "../controllers/usercontroller.js";
@@ -64,10 +63,15 @@ router.get("/getacceptedbookings",                  requireAuth, authorizeRole("
 router.get("/getbookinghistory",                    requireAuth, authorizeRole("user"), getBookingHistoryController);
 router.get("/getcurrentbookingdetails/:bookingId",  requireAuth, getBookingDetailsController);
 
-// Returns active booking counts per departure slot for a boat on a given date.
-// Query param: ?date=YYYY-MM-DD
-// Response: { "7:00 AM": 17, "9:00 AM": 3 }
+// ── Slot capacity ─────────────────────────────────────────────────────────────
+// Primary route — query param: ?tripDate=YYYY-MM-DD
+// Response: { "7:00 AM": { remaining, capacity, bookedCount }, … }
 // Used by BookBoat.tsx to display remaining seats per slot before booking.
+router.get("/slot-capacity/:boatId",  requireAuth, authorizeRole("user"), getSlotCapacityController);
+
+// Backward-compat alias — kept so any old clients still calling /slotcounts
+// continue to work without a server restart. Remove once all clients are updated.
+router.get("/slotcounts/:boatId",     requireAuth, authorizeRole("user"), getSlotCapacityController);
 
 // ── Tickets / Refunds ────────────────────────────────────────────────────────
 router.get("/getrefundticketcards",          requireAuth, authorizeRole("user"), getRefundTicketCardsController);
@@ -75,13 +79,11 @@ router.get("/getsupportticketcards",         requireAuth, authorizeRole("user"),
 router.get("/getrefunddetails/:refundId",    requireAuth, authorizeRole("user"), getRefundTicketDetailsController);
 router.get("/getticketdetails/:ticketId",    requireAuth, authorizeRole("user"), getTicketDetailsController);
 
-
 // ── Mutations ────────────────────────────────────────────────────────────────
 router.post("/physicalbookboat",  requireAuth, authorizeRole("user"), bookingLimiter, physicalbookBoatController);
 router.post("/onlinebookboat",    requireAuth, authorizeRole("user"), bookingLimiter, parseBoatFiles, uploadGcashImage, onlinebookBoatController);
 router.post("/refundticket",      requireAuth, authorizeRole("user"), uploadLimiter, parseBoatFiles, uploadRefundImage, refundTicketController);
 router.post("/submitticket",      requireAuth, authorizeRole("user"), ticketLimiter, submitTicketController);
-router.get("/slot-capacity/:boatId",  requireAuth, authorizeRole("user"), getSlotCapacityController);
 router.patch("/cancelbooking/:bookingId",   requireAuth, authorizeRole("user"), bookingActionLimiter, cancelPendingBookingController);
 router.patch("/confirmedituser/:userId",    requireAuth, authorizeRole("user"), editLimiter, confirmEditUserController);
 
