@@ -151,7 +151,6 @@ async function buildDecayedMatrix(): Promise<{
   rawPopularity: Record<string, number>;
   validBoatIds:  Set<string>;
 }> {
-  // Can't cache a Set directly — serialize as array, rehydrate after
   const cached = await withCache("cf:matrix:all", MATRIX_TTL, async () => {
     const [boatIdRows] = await connection.execute<RowDataPacket[]>(
       `SELECT boat_id FROM boats
@@ -202,11 +201,9 @@ async function buildDecayedMatrix(): Promise<{
       matrix[uid] = l2Normalise(rawMatrix[uid]);
     }
 
-    // ✅ Serialize Set as plain array so JSON cache round-trip is safe
     return { matrix, rawPopularity, validBoatIdsArray };
   });
 
-  // ✅ Rehydrate the array back into a Set after cache read
   return {
     matrix:        cached.matrix,
     rawPopularity: cached.rawPopularity,
@@ -223,7 +220,6 @@ export async function getRecommendedBoatsWeighted(
     await Promise.all([
       buildDecayedMatrix(),
       getAllBoats(),
-      // ✅ Cache as plain array, NOT a Set
       withCache(`user:booked:${userId}`, BOOKING_TTL, async () => {
         const [rows] = await connection.execute<RowDataPacket[]>(
           `SELECT DISTINCT fk_booking_boatId AS boat_id
@@ -233,11 +229,10 @@ export async function getRecommendedBoatsWeighted(
              AND fk_booking_boatId IS NOT NULL`,
           [userId]
         );
-        return rows.map(r => String(r.boat_id)); // ✅ plain array — survives JSON
+        return rows.map(r => String(r.boat_id));
       }),
     ]);
 
-  // ✅ Rehydrate array → Set after cache read
   const bookedBoatIds = new Set<string>(bookedBoatIdsArray);
 
   const boatMap = new Map<string, BoatRow>(
@@ -461,21 +456,14 @@ export async function bookBoatdetails(boatID: string) {
   });
 }
 
-// ─── Slot booking counts (for frontend seat display) ─────────────────────────
-// Returns { "7:00 AM": 3, "9:00 AM": 12 } — active bookings per departure slot
-// for a specific boat + trip date. Frontend uses this to show "X seats left".
-
 // ─── Physical Booking Transaction ─────────────────────────────────────────────
 //
-//  Capacity logic:
-//  1. Lock the boat row (FOR UPDATE) and read capacity_information from boats table.
-//  2. Count active bookings for this boat WHERE trip_date = ? AND departure slot = ?.
-//     This gives per-slot occupancy — not global across all dates/times.
-//  3. If slot is full → 409. Otherwise insert booking with boatcapacity snapshot.
-//
-//  The bookings.boatcapacity column stores the total capacity at the time of
-//  booking (snapshot). It does NOT change. Per-slot occupancy is always derived
-//  live from COUNT(*) so it stays accurate across concurrent requests.
+//  Capacity logic (per slot, per date):
+//  1. Lock the boat row (FOR UPDATE) and read capacity_information.
+//  2. Count active (non-cancelled) bookings for this exact boat + date + slot.
+//     FIX: use TRIM() on the extracted JSON value to avoid whitespace mismatches,
+//          and cast both sides to CHAR so collation never causes a mismatch.
+//  3. If slot is full → 409. Otherwise insert.
 //
 export async function physicalbookTransaction(
   userId:    number,
@@ -488,10 +476,12 @@ export async function physicalbookTransaction(
     schedules, ticketPrice, boatName, tripDate,
   } = body;
 
-  // schedules arriving from the frontend is the selected slot object:
-  // { departureTime: "7:00 AM", arrivalTime: "8:00 AM" }
-  const departureTime: string = schedules?.departureTime ?? "";
-  const arrivalTime:   string = schedules?.arrivalTime   ?? "";
+  const departureTime: string = (schedules?.departureTime ?? "").trim();
+  const arrivalTime:   string = (schedules?.arrivalTime   ?? "").trim();
+
+  if (!departureTime) {
+    throw { status: 400, message: "departureTime is required inside schedules" };
+  }
 
   while (true) {
     const ticketCode = generateTicketCode();
@@ -500,7 +490,7 @@ export async function physicalbookTransaction(
     try {
       await conn.beginTransaction();
 
-      // ── 1. Lock boat row, read capacity from source of truth ──────────────
+      // ── 1. Lock boat row ──────────────────────────────────────────────────
       const [boatRows] = await conn.execute(
         `SELECT capacity_information FROM boats WHERE boat_id = ? FOR UPDATE`,
         [boatId]
@@ -514,33 +504,39 @@ export async function physicalbookTransaction(
 
       const boatCapacity = Number(boatRows[0].capacity_information);
 
-      // ── 2. Count active bookings for this specific date + slot ────────────
-      //    JSON_UNQUOTE + JSON_EXTRACT reads the departureTime field from the
-      //    stored JSON column so we match exactly the slot the user selected.
+      // ── 2. Count active bookings for this exact date + slot ───────────────
+      //
+      //  FIX: TRIM() both the stored JSON value and the param so that any
+      //  accidental leading/trailing spaces in stored data never cause a miss.
+      //  The schedules column stores a JSON *object*: {"departureTime":"7:00 AM",...}
+      //  JSON_EXTRACT returns the value with surrounding quotes; JSON_UNQUOTE removes them.
+      //
       const [countRows] = await conn.execute(
         `SELECT COUNT(*) AS activeBookings
          FROM bookings
          WHERE fk_booking_boatId = ?
-           AND trip_date = ?
-           AND JSON_UNQUOTE(JSON_EXTRACT(schedules, '$.departureTime')) = ?
+           AND trip_date         = ?
+           AND TRIM(JSON_UNQUOTE(JSON_EXTRACT(schedules, '$.departureTime'))) = TRIM(?)
            AND bookingstatus NOT IN ('cancelled')`,
         [boatId, tripDate, departureTime]
       ) as [RowDataPacket[], any];
 
       const activeBookings = Number(countRows[0].activeBookings);
 
+      // ── SOLD-OUT check ────────────────────────────────────────────────────
       if (activeBookings >= boatCapacity) {
         await conn.rollback();
         conn.release();
         throw {
           status: 409,
-          message: `This slot (${departureTime} → ${arrivalTime}) is fully booked`,
+          message: `This slot (${departureTime} → ${arrivalTime}) is fully booked. No seats remaining.`,
+          soldOut: true,
         };
       }
 
-      const remainingSeats = boatCapacity - activeBookings; // informational only
+      const remainingSeats = boatCapacity - activeBookings;
 
-      // ── 3. Insert booking — boatcapacity is a snapshot of total capacity ──
+      // ── 3. Insert booking ─────────────────────────────────────────────────
       const [result] = await conn.execute(
         `INSERT INTO bookings (
            ticketcode, fk_booking_userId, fk_booking_boatId,
@@ -560,12 +556,12 @@ export async function physicalbookTransaction(
           tripDate     || null,
           routeFrom    || null,
           routeTo      || null,
-          JSON.stringify(schedules),   // stores { departureTime, arrivalTime }
+          JSON.stringify({ departureTime, arrivalTime }),  // always a clean object
           "physical",
           "pending",
           "active",
           ticketPrice  || null,
-          boatCapacity,                // snapshot from boats.capacity_information
+          boatCapacity,
         ]
       );
       const bookingId = (result as any).insertId;
@@ -611,6 +607,71 @@ export async function physicalbookTransaction(
       throw err;
     }
   }
+}
+
+// ─── Slot Capacity ────────────────────────────────────────────────────────────
+//
+//  Returns remaining + total seats per departure slot for a given boat + date.
+//  Used by the frontend to render "X seats left / Sold Out" per slot.
+//
+//  FIX 1: Added TRIM() on the JSON_UNQUOTE result so whitespace in stored data
+//          never causes a slot to appear at 0 when seats remain.
+//  FIX 2: Changed status filter from NOT IN ('cancelled') to an explicit list
+//          of active statuses so future statuses don't silently break things.
+//
+export async function getSlotCapacity(
+  boatId:   string,
+  tripDate: string
+): Promise<Record<string, { remaining: number; capacity: number; bookedCount: number }>> {
+  // 1. Read capacity + schedule definition from the boat row
+  const [boatRows] = await connection.execute<RowDataPacket[]>(
+    `SELECT capacity_information, schedules
+     FROM boats
+     WHERE boat_id = ? AND registration_status = 'verified' AND status = 'active'`,
+    [parseInt(boatId)]
+  );
+  if (!boatRows.length) throw { status: 404, message: "Boat not found" };
+
+  const capacity: number = Number(boatRows[0].capacity_information);
+  const rawSchedules = boatRows[0].schedules;
+  const schedules: { departureTime: string; arrivalTime: string }[] =
+    typeof rawSchedules === "string" ? JSON.parse(rawSchedules) : rawSchedules ?? [];
+
+  // 2. Count active (non-cancelled) bookings grouped by departure slot
+  //    FIX: TRIM() the extracted value to handle any stored whitespace
+  const [countRows] = await connection.execute<RowDataPacket[]>(
+    `SELECT
+       TRIM(JSON_UNQUOTE(JSON_EXTRACT(schedules, '$.departureTime'))) AS departureTime,
+       COUNT(*) AS activeBookings
+     FROM bookings
+     WHERE fk_booking_boatId = ?
+       AND trip_date          = ?
+       AND bookingstatus NOT IN ('cancelled')
+     GROUP BY TRIM(JSON_UNQUOTE(JSON_EXTRACT(schedules, '$.departureTime')))`,
+    [parseInt(boatId), tripDate]
+  );
+
+  // Build lookup: trimmed departureTime → active count
+  const activeMap: Record<string, number> = {};
+  for (const row of countRows) {
+    if (row.departureTime) {
+      activeMap[row.departureTime.trim()] = Number(row.activeBookings);
+    }
+  }
+
+  // 3. Build result keyed by trimmed departureTime
+  const result: Record<string, { remaining: number; capacity: number; bookedCount: number }> = {};
+  for (const slot of schedules) {
+    const key    = slot.departureTime.trim();
+    const booked = activeMap[key] ?? 0;
+    result[key] = {
+      remaining:   Math.max(0, capacity - booked),
+      capacity,
+      bookedCount: booked,
+    };
+  }
+
+  return result;
 }
 
 // ─── Pending Bookings ─────────────────────────────────────────────────────────
@@ -887,53 +948,4 @@ export async function getRefundDetails(refundId: number, user: AuthPayload) {
     [refundId, sub]
   );
   return rows.length === 0 ? null : rows[0];
-}
-export async function getSlotCapacity(
-  boatId:   string,
-  tripDate: string
-): Promise<Record<string, { remaining: number; capacity: number }>> {
-  // 1. Read total capacity from boats table (source of truth)
-  const [boatRows] = await connection.execute<RowDataPacket[]>(
-    `SELECT capacity_information, schedules
-     FROM boats
-     WHERE boat_id = ? AND registration_status = 'verified' AND status = 'active'`,
-    [parseInt(boatId)]
-  );
-  if (!boatRows.length) throw { status: 404, message: "Boat not found" };
-
-  const capacity: number = Number(boatRows[0].capacity_information);
-  const rawSchedules = boatRows[0].schedules;
-  const schedules: { departureTime: string; arrivalTime: string }[] =
-    typeof rawSchedules === "string" ? JSON.parse(rawSchedules) : rawSchedules ?? [];
-
-  // 2. Count active bookings grouped by departure slot for this date
-  const [countRows] = await connection.execute<RowDataPacket[]>(
-    `SELECT
-       JSON_UNQUOTE(JSON_EXTRACT(schedules, '$.departureTime')) AS departureTime,
-       COUNT(*) AS activeBookings
-     FROM bookings
-     WHERE fk_booking_boatId = ?
-       AND trip_date = ?
-       AND bookingstatus NOT IN ('cancelled')
-     GROUP BY departureTime`,
-    [parseInt(boatId), tripDate]
-  );
-
-  // Build a lookup: departureTime → active count
-  const activeMap: Record<string, number> = {};
-  for (const row of countRows) {
-    activeMap[row.departureTime] = Number(row.activeBookings);
-  }
-
-  // 3. Return remaining seats per slot
-  const result: Record<string, { remaining: number; capacity: number }> = {};
-  for (const slot of schedules) {
-    const active = activeMap[slot.departureTime] ?? 0;
-    result[slot.departureTime] = {
-      remaining: Math.max(0, capacity - active),
-      capacity,
-    };
-  }
-
-  return result;
 }

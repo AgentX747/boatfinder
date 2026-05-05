@@ -74,7 +74,7 @@ router.get("/getrefundticketcards",          requireAuth, authorizeRole("user"),
 router.get("/getsupportticketcards",         requireAuth, authorizeRole("user"), getSupportTicketCardsController);
 router.get("/getrefunddetails/:refundId",    requireAuth, authorizeRole("user"), getRefundTicketDetailsController);
 router.get("/getticketdetails/:ticketId",    requireAuth, authorizeRole("user"), getTicketDetailsController);
-router.get("/slot-capacity/:boatId",         requireAuth, authorizeRole("user"), getSlotCapacityController);
+
 
 // ── Mutations ────────────────────────────────────────────────────────────────
 router.post("/physicalbookboat",  requireAuth, authorizeRole("user"), bookingLimiter, physicalbookBoatController);
