@@ -17,9 +17,9 @@ const MAPBOX_KEY =
 // ─── ROUTE MAP ────────────────────────────────────────────────────────────────
 // Maps departure port name → allowed arrival island names
 const ROUTE_MAP: Record<string, string[]> = {
-  "Mar Beach / Marigondon Port": ["Pangan-an Island", "Caohagan Island (Cawhagan)", "Olango Island (Sta. Rosa Port)"],
-  "Hilton / Punta Engaño Port":  ["Olango Island (Sta. Rosa Port)"],
-  "Angasil Port (Sta. Rosa Ferry)": ["Olango Island (Sta. Rosa Port)"],
+  "Mar Beach / Marigondon Port": ["Pangan-an Island", "Caohagan Island (Cawhagan)", "Olango Island (San Vicente Port)"],
+  "Hilton / Punta Engaño Port":  ["Olango Island (San Vicente Port)"],
+  "Angasil Port (Sta. Rosa Ferry)": ["Olango Island (San Vicente Port)"],
 };
 
 // ─── TYPES ────────────────────────────────────────────────────────────────────
@@ -76,11 +76,11 @@ export const ISLANDS: Location[] = [
   },
   {
     id: "olango",
-    name: "Olango Island (Sta. Rosa Port)",
+    name: "Olango Island (San Vicente Port)",
     lat: 10.2515,
     lng: 124.0566,
     type: "island",
-    info: "Wildlife sanctuary. Main port is Sta. Rosa, 15–20 min from Angasil or Hilton.",
+    info: "Wildlife sanctuary. Main port is San Vicente, 15–20 min from Angasil or Hilton.",
     source: "PhilAtlas Sabang brgy on Olango (was 10.2325 — fixed 3.1 km)",
   },
   {
@@ -940,7 +940,7 @@ export default function NearestIslandRecommendation() {
           <p>Angasil Port · nearbyph.com → 10.3037, 124.0185 (was 123.9494 — fixed 7 km)</p>
           <p>Hilton/Punta Engaño · Wikivoyage → 10.3112, 124.0248 — confirmed</p>
           <p>Pangan-an · PhilAtlas PSA → 10.2208, 124.0398 (was 124.0122 — fixed 3.2 km)</p>
-          <p>Olango · PhilAtlas Sabang brgy → 10.2515, 124.0566 (was 10.2325 — fixed 3.1 km)</p>
+          <p>Olango · PhilAtlas Sabang brgy → 10.2515, 124.0566 (was 10.2325 — fixed 3.1 km) · arrival port: San Vicente</p>
           <p>Gilutongan · OSM way 64494667 → 10.2065, 123.9891 — confirmed</p>
           <p>Nalusuan · latitude.to/Wikipedia → 10.1877, 124.0003 — confirmed</p>
           <p>Caohagan · Wikidata/GNS -2420588 → 10.2028, 124.0194 (was 10.2732 — fixed 8+ km!)</p>
