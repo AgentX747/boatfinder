@@ -1,4 +1,3 @@
-import { connect } from "http2";
 import * as adminService from "../services/adminservice.js";
 
 
@@ -104,6 +103,30 @@ export async function adminReplyController(req: any, res: any) {
     }
 
     const result = await adminService.adminReply(ticketId, user_id, reply);
+    res.status(200).json(result);
+  } catch (err: any) {
+    res.status(err.status || 500).json({ message: err.message });
+  }
+}
+export async function getBookingReportController(req: any, res: any) {
+  try {
+    const { dateFrom, dateTo } = req.query as { dateFrom?: string; dateTo?: string };
+ 
+    if (!dateFrom || !dateTo) {
+      return res.status(400).json({ message: "Both dateFrom and dateTo are required" });
+    }
+ 
+    // Validate ISO date format (YYYY-MM-DD)
+    const iso = /^\d{4}-\d{2}-\d{2}$/;
+    if (!iso.test(dateFrom) || !iso.test(dateTo)) {
+      return res.status(400).json({ message: "Dates must be in YYYY-MM-DD format" });
+    }
+ 
+    if (new Date(dateFrom) > new Date(dateTo)) {
+      return res.status(400).json({ message: "dateFrom must be before or equal to dateTo" });
+    }
+ 
+    const result = await adminService.getBookingReport(dateFrom, dateTo);
     res.status(200).json(result);
   } catch (err: any) {
     res.status(err.status || 500).json({ message: err.message });

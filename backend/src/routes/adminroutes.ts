@@ -1,8 +1,8 @@
-import { authorizeRole  } from "../middleware/authorizationmiddleware.js";
-import {requireAuth} from "../middleware/authmiddleware.js";
 import { Router } from "express";
-import { getAdminSessionController , } from "../controllers/sessioncontroller.js";
-import {getBoatOperatorsController , getBoatOperatorsbyIDController , verifyBoatOperatorController ,getAllBoatsController,getBoatsbyIDController , confirmBoatRegistrationController,rejectBoatOperatorController,rejectBoatRegistrationController, getAdminLogsController, getPendingSupportTicketsController,getTicketDetailsController,adminReplyController} from "../controllers/admincontroller.js";
+import { adminReplyController, confirmBoatRegistrationController, getAdminLogsController, getAllBoatsController, getBoatOperatorsController, getBoatOperatorsbyIDController, getBoatsbyIDController, getBookingReportController, getPendingSupportTicketsController, getTicketDetailsController, rejectBoatOperatorController, rejectBoatRegistrationController, verifyBoatOperatorController } from "../controllers/admincontroller.js";
+import { getAdminSessionController, } from "../controllers/sessioncontroller.js";
+import { requireAuth } from "../middleware/authmiddleware.js";
+import { authorizeRole } from "../middleware/authorizationmiddleware.js";
 
 const router = Router();
 
@@ -26,7 +26,10 @@ router.get("/downloadfile", (req, res) => {
   // ✅ URL is already public — just redirect directly
   res.redirect(decodeURIComponent(url));
 });
-
+router.get("/bookingreport",
+ requireAuth,
+ authorizeRole("admin"),
+   getBookingReportController)
 
 
 

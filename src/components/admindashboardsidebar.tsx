@@ -1,4 +1,4 @@
-import { LogOut, User, Users, Sailboat, Ticket, FileText } from "lucide-react"
+import { BarChart2, FileText, LogOut, Sailboat, Ticket, User, Users } from "lucide-react"
 
 interface UserProfile {
   adminId: number | string
@@ -12,6 +12,7 @@ interface SidebarProps {
   renderboatapplications?: () => void
   rendersupporttickets?: () => void
   rendersystemlogs?: () => void
+  renderbookingreports?: () => void
   goToProfile?: () => void
   logout?: () => void
 }
@@ -22,6 +23,7 @@ export default function AdminSidebar({
   renderboatapplications,
   rendersupporttickets,
   rendersystemlogs,
+  renderbookingreports,
   logout,
   goToProfile,
 }: SidebarProps) {
@@ -37,7 +39,6 @@ export default function AdminSidebar({
           >
             <User className="w-5 h-5 lg:w-8 lg:h-8 text-black" />
           </button>
-          {/* Name, ID and role only visible on lg+ */}
           <div className="hidden lg:block">
             <p className="text-slate-900 font-bold text-sm">
               {user?.firstName} {user?.lastName}
@@ -91,6 +92,17 @@ export default function AdminSidebar({
           >
             <FileText className="w-5 h-5 flex-shrink-0" />
             <span className="hidden lg:block text-sm leading-tight">System Logs</span>
+          </button>
+        </li>
+
+        <li>
+          <button
+            className="w-full flex flex-col items-center justify-center gap-1 lg:gap-2 px-1 lg:px-4 py-2.5 lg:py-3 text-slate-600 rounded-lg transition-all duration-200 hover:bg-gradient-to-r hover:from-blue-50 hover:to-blue-100 hover:text-blue-600 hover:shadow-sm active:scale-95 font-medium text-center"
+            onClick={renderbookingreports}
+            title="Booking Reports"
+          >
+            <BarChart2 className="w-5 h-5 flex-shrink-0" />
+            <span className="hidden lg:block text-sm leading-tight">Booking Reports</span>
           </button>
         </li>
       </ul>

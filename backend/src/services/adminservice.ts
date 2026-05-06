@@ -1,7 +1,6 @@
-import { connection } from "../config/mysql.js";
 import { RowDataPacket } from "mysql2";
-import { AuthPayload } from "../middleware/authmiddleware.js";
-import { withCache, invalidateCache } from "../utils/cache.js";
+import { connection } from "../config/mysql.js";
+import { invalidateCache, withCache } from "../utils/cache.js";
 
 // ─── TTLs ─────────────────────────────────────────────────────────────────────
 const OPERATORS_TTL = 300; // slow-changing: operator list/details
@@ -381,4 +380,58 @@ export async function adminReply(ticketId: number, user_id: number, reply: strin
     console.error("Error sending admin reply:", error);
     throw error;
   }
+}
+// ─── BOOKING REPORTS ──────────────────────────────────────────────────────────
+// Add these functions to adminservice.ts
+
+/**
+ * Returns booking records within an inclusive date range [dateFrom, dateTo].
+ * Both dates refer to trip_date (the actual travel date).
+ * Not cached — reports must always reflect live data.
+ */
+export async function getBookingReport(dateFrom: string, dateTo: string) {
+  // Validate that dateFrom <= dateTo on the service layer
+  if (new Date(dateFrom) > new Date(dateTo)) {
+    throw { status: 400, message: "dateFrom must be before or equal to dateTo" };
+  }
+
+  const [rows] = await connection.execute<RowDataPacket[]>(
+    `SELECT
+       b.booking_id,
+       b.ticketcode,
+       b.boatName,
+       b.trip_date,
+       b.booking_date,
+       b.route_from,
+       b.route_to,
+       b.bookingstatus,
+       b.boatstatus,
+       b.total_price,
+       b.payment_method,
+       b.boatcapacity,
+       JSON_UNQUOTE(JSON_EXTRACT(b.schedules, '$.departureTime')) AS departure_time,
+       JSON_UNQUOTE(JSON_EXTRACT(b.schedules, '$.arrivalTime'))   AS arrival_time,
+       CONCAT(u.firstName, ' ', u.lastName) AS passengerName,
+       u.email                              AS passengerEmail,
+       CONCAT(op.firstName, ' ', op.lastName) AS operatorName,
+       c.companyName
+     FROM bookings b
+     LEFT JOIN users u        ON b.fk_booking_userId    = u.user_id
+     LEFT JOIN boatoperators op ON b.fk_booking_operatorId = op.operator_id
+     LEFT JOIN companies c    ON b.fk_booking_companyId = c.company_id
+     WHERE b.trip_date BETWEEN ? AND ?
+     ORDER BY b.trip_date ASC, b.booking_id ASC`,
+    [dateFrom, dateTo]
+  );
+
+  // Summary stats
+  const total      = rows.length;
+  const revenue    = rows.reduce((sum, r) => sum + (Number(r.total_price) || 0), 0);
+  const byStatus: Record<string, number> = {};
+  for (const row of rows) {
+    const s = row.bookingstatus ?? "unknown";
+    byStatus[s] = (byStatus[s] ?? 0) + 1;
+  }
+
+  return { bookings: rows, summary: { total, revenue, byStatus } };
 }
