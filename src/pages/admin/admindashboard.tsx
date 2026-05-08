@@ -4,6 +4,7 @@ import BoatOperatorCard from "../../cards/boatoperatordetailscard.js";
 import BoatCard from "../../cards/boatcarddetails.js";
 import { apiFetch } from "../../utils/apifetch.js";
 import { useNavigate } from "react-router-dom";
+import BoatLogo from "../../assets/BOATLOGO.png";
 import {
   Search, Activity, Shield, Users, LogIn, Anchor, Trash2, Plus,
   CheckCircle, XCircle, AlertCircle, Edit3, DollarSign, LogOut,
