@@ -1,5 +1,5 @@
 import AdminSideBar from "../../components/admindashboardsidebar.js";
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import BoatOperatorCard from "../../cards/boatoperatordetailscard.js";
 import BoatCard from "../../cards/boatcarddetails.js";
 import { apiFetch } from "../../utils/apifetch.js";
@@ -8,7 +8,7 @@ import BoatLogo from "../../assets/BOATLOGO.png";
 import {
   Search, Activity, Shield, Users, LogIn, Anchor, Trash2, Plus,
   CheckCircle, XCircle, AlertCircle, Edit3, DollarSign, LogOut,
-  FileText, Download, TrendingUp, Clock, BarChart2,
+  FileText, Download, Clock, BarChart2,
 } from "lucide-react";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -151,12 +151,21 @@ const STATUS_ICON: Record<string, React.ReactElement> = {
   cancelled: <XCircle className="w-3 h-3" />,
 };
 
-function downloadReportPDF(data: ReportData, dateFrom: string, dateTo: string) {
+// ─── PDF Generator (accepts preloaded logo base64) ────────────────────────────
+
+function buildAndOpenPDF(
+  data: ReportData,
+  dateFrom: string,
+  dateTo: string,
+  logoDataUrl: string
+) {
   const { bookings, summary } = data;
 
-  const rows = bookings
-    .map(
-      (b) => `
+  const logoTag = logoDataUrl
+    ? `<img src="${logoDataUrl}" alt="BoatFinder Logo" />`
+    : `<div style="width:48px;height:48px;background:#1e3a8a;border-radius:8px;display:flex;align-items:center;justify-content:center;color:#fff;font-size:18pt;font-weight:700;">B</div>`;
+
+  const rows = bookings.map((b) => `
     <tr>
       <td>${b.booking_id}</td>
       <td>${b.ticketcode ?? "—"}</td>
@@ -170,9 +179,7 @@ function downloadReportPDF(data: ReportData, dateFrom: string, dateTo: string) {
       <td>${b.payment_method ?? "—"}</td>
       <td>${b.operatorName ?? "—"}</td>
       <td>${b.companyName ?? "—"}</td>
-    </tr>`
-    )
-    .join("");
+    </tr>`).join("");
 
   const statusRows = Object.entries(summary.byStatus)
     .map(([s, n]) => `<tr><td class="capitalize">${s}</td><td>${n}</td></tr>`)
@@ -187,9 +194,9 @@ function downloadReportPDF(data: ReportData, dateFrom: string, dateTo: string) {
   @page { size: A4 landscape; margin: 18mm 14mm; }
   * { box-sizing: border-box; }
   body { font-family: 'Segoe UI', Arial, sans-serif; font-size: 9pt; color: #1a1a2e; margin: 0; padding: 0; }
-  .header { display: flex; align-items: flex-start; justify-content: space-between; border-bottom: 2.5px solid #1e3a8a; padding-bottom: 10px; margin-bottom: 14px; }
-  .brand { display: flex; align-items: center; gap: 10px; }
-  .brand-icon { width: 38px; height: 38px; background: #1e3a8a; border-radius: 8px; display: flex; align-items: center; justify-content: center; color: #fff; font-size: 18pt; font-weight: 700; }
+  .header { display: flex; align-items: center; justify-content: space-between; border-bottom: 2.5px solid #1e3a8a; padding-bottom: 10px; margin-bottom: 14px; }
+  .brand { display: flex; align-items: center; gap: 12px; }
+  .brand img { height: 48px; width: auto; object-fit: contain; }
   .brand-name { font-size: 16pt; font-weight: 700; color: #1e3a8a; }
   .brand-sub { font-size: 8pt; color: #4b5563; }
   .meta { text-align: right; font-size: 8pt; color: #6b7280; line-height: 1.8; }
@@ -208,17 +215,19 @@ function downloadReportPDF(data: ReportData, dateFrom: string, dateTo: string) {
   table.bookings td { font-size: 7.5pt; padding: 4px 6px; border-bottom: 0.5px solid #e5e7eb; white-space: nowrap; }
   table.bookings tr:nth-child(even) td { background: #f8fafc; }
   .right { text-align: right; }
-  .status.pending { color: #92400e; }
-  .status.accepted { color: #065f46; }
+  .status.pending   { color: #92400e; }
+  .status.accepted  { color: #065f46; }
   .status.completed { color: #1e40af; }
   .status.cancelled { color: #991b1b; }
-  .footer { margin-top: 16px; border-top: 1px solid #e5e7eb; padding-top: 8px; font-size: 7.5pt; color: #9ca3af; display: flex; justify-content: space-between; }
+  .footer { margin-top: 16px; border-top: 1px solid #e5e7eb; padding-top: 8px; font-size: 7.5pt; color: #9ca3af; display: flex; justify-content: space-between; align-items: center; }
+  .footer img { height: 20px; width: auto; opacity: 0.4; }
 </style>
 </head>
 <body>
+
 <div class="header">
   <div class="brand">
-    <div class="brand-icon">B</div>
+    ${logoTag}
     <div>
       <div class="brand-name">BoatFinder</div>
       <div class="brand-sub">Admin Booking Report</div>
@@ -231,15 +240,18 @@ function downloadReportPDF(data: ReportData, dateFrom: string, dateTo: string) {
     Total records: ${summary.total}
   </div>
 </div>
+
 <div class="summary-grid">
   <div class="stat-card"><div class="label">Total Bookings</div><div class="value">${summary.total}</div></div>
   <div class="stat-card"><div class="label">Total Revenue</div><div class="value">${formatCurrency(summary.revenue)}</div></div>
   <div class="stat-card"><div class="label">Completed</div><div class="value">${summary.byStatus["completed"] ?? 0}</div></div>
   <div class="stat-card"><div class="label">Cancelled</div><div class="value">${summary.byStatus["cancelled"] ?? 0}</div></div>
 </div>
+
 <div class="status-table">
   <table><thead><tr><th>Status</th><th>Count</th></tr></thead><tbody>${statusRows}</tbody></table>
 </div>
+
 <table class="bookings">
   <thead>
     <tr>
@@ -250,11 +262,14 @@ function downloadReportPDF(data: ReportData, dateFrom: string, dateTo: string) {
   </thead>
   <tbody>${rows || '<tr><td colspan="12" style="text-align:center;padding:16px;color:#9ca3af;">No bookings found for this period.</td></tr>'}</tbody>
 </table>
+
 <div class="footer">
+  ${logoDataUrl ? `<img src="${logoDataUrl}" alt="BoatFinder" />` : "<span>BoatFinder</span>"}
   <span>BoatFinder Admin — Confidential</span>
   <span>Generated ${new Date().toISOString()}</span>
 </div>
-<script>window.onload = () => { window.print(); }</script>
+
+<script>window.onload = () => { window.print(); }<\/script>
 </body>
 </html>`;
 
@@ -302,8 +317,31 @@ export default function AdminDashboard() {
   const [reportError,    setReportError]    = useState<string | null>(null);
   const [reportSearch,   setReportSearch]   = useState("");
 
+  // ── Preload logo as base64 so blob windows can embed it ────────────────────
+  const logoBase64Ref = useRef<string>("");
+
   // ── Fetch on mount ──────────────────────────────────────────────────────────
   useEffect(() => {
+    // Preload logo — Vite resolves BoatLogo to a hashed URL at build time;
+    // we fetch it here (same origin, works fine) and store the base64 data URL
+    // so the PDF blob window can embed it without needing network access.
+    async function preloadLogo() {
+      try {
+        const resp = await fetch(BoatLogo);
+        if (!resp.ok) throw new Error("Logo fetch failed");
+        const blob = await resp.blob();
+        const dataUrl = await new Promise<string>((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onloadend = () => resolve(reader.result as string);
+          reader.onerror   = () => reject(new Error("FileReader error"));
+          reader.readAsDataURL(blob);
+        });
+        logoBase64Ref.current = dataUrl;
+      } catch (e) {
+        console.warn("Could not preload logo for PDF:", e);
+      }
+    }
+
     async function fetchAdminSession() {
       try {
         const res = await apiFetch("https://boatfinder.onrender.com/admin/adminsession", {
@@ -356,6 +394,7 @@ export default function AdminDashboard() {
       } catch (error) { console.error("Failed to fetch pending tickets:", error); }
     }
 
+    preloadLogo();
     fetchPendingTickets();
     fetchAdminLogs();
     fetchBoats();
@@ -411,6 +450,12 @@ export default function AdminDashboard() {
     } finally {
       setReportLoading(false);
     }
+  }
+
+  // Convenience wrapper — grabs logo from ref so call sites stay clean
+  function handleDownloadPDF() {
+    if (!report) return;
+    buildAndOpenPDF(report, reportDateFrom, reportDateTo, logoBase64Ref.current);
   }
 
   const filteredReportBookings = (report?.bookings ?? []).filter((b) => {
@@ -724,7 +769,7 @@ export default function AdminDashboard() {
 
                   {report && (
                     <button
-                      onClick={() => downloadReportPDF(report, reportDateFrom, reportDateTo)}
+                      onClick={handleDownloadPDF}
                       className="flex items-center gap-2 bg-green-600 hover:bg-green-700 text-white px-6 py-2 rounded-lg font-medium text-sm transition-colors shadow"
                     >
                       <Download className="w-4 h-4" />
@@ -851,13 +896,13 @@ export default function AdminDashboard() {
                       </table>
                     </div>
 
-                    {/* Footer */}
+                    {/* Table footer */}
                     <div className="border-t border-blue-100 px-4 py-2 flex items-center justify-between bg-blue-50">
                       <span className="text-xs text-blue-600">
                         Showing {filteredReportBookings.length} of {report.bookings.length} bookings
                       </span>
                       <button
-                        onClick={() => downloadReportPDF(report, reportDateFrom, reportDateTo)}
+                        onClick={handleDownloadPDF}
                         className="flex items-center gap-1.5 text-xs text-blue-700 hover:text-blue-900 font-medium"
                       >
                         <Download className="w-3.5 h-3.5" />
