@@ -16,7 +16,7 @@ const port = 3000;
 
 
 app.use(cors({
-   origin: ['https://boatfinders.onrender.com', 'http://localhost:3000'],
+   origin: ['https://boatfinders.onrender.com', 'http://localhost:5173'],
   credentials: true,
   methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
   allowedHeaders: ["Content-Type", "Authorization"]
