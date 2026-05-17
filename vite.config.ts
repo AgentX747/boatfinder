@@ -6,7 +6,7 @@ import tailwindcss from '@tailwindcss/vite'
 export default defineConfig({
   plugins: [react() , tailwindcss()],
    preview: {
-    allowedHosts: ['boatfinders.onrender.com', 'localhost:5173']  // ← ADD THIS
+    allowedHosts: ['boatfinders.onrender.com', 'localhost:5173', 'localhost:3000']  // ← ADD THIS
   }
 
 
